@@ -1,0 +1,31 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator zod {
+  provider = "zod-prisma-types"
+}
+
+/// User model
+model User {
+  /// user id
+  id         String  @id @default(uuid())
+  /// telegram user id
+  telegramId String  @unique
+  /// telegram username
+  username   String?
+  /// telegram first name
+  firstName  String?
+  /// telegram last name
+  lastName   String?
+  /// telegram photo url
+  photoUrl   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,21 @@
+{
+  "extends": "@sindresorhus/tsconfig",
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "module": "NodeNext",
+    "resolveJsonModule": true,
+    "types": ["./src/@types/global.d.ts"],
+    "noPropertyAccessFromIndexSignature": false,
+    "outDir": "dist",
+    "isolatedModules": true
+  },
+  "include": ["src", "prisma"],
+  "exclude": ["node_modules", "dist"],
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  }
+}
