@@ -16,8 +16,7 @@ async function bootstrap() {
     logger.error('Unhandled Rejection at:', reason)
   })
 
-  await tgBotService.start()
-
+  tgBotService.run()
   logger.info('Bot started')
 }
 

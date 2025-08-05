@@ -14,6 +14,8 @@ export const TransactionIsolationLevelSchema = z.enum(['Serializable']);
 
 export const UserScalarFieldEnumSchema = z.enum(['id','telegramId','username','firstName','lastName','photoUrl','createdAt','updatedAt']);
 
+export const TelegramMessageSessionScalarFieldEnumSchema = z.enum(['id','key','value']);
+
 export const SortOrderSchema = z.enum(['asc','desc']);
 
 export const NullsOrderSchema = z.enum(['first','last']);
@@ -60,6 +62,21 @@ export const UserSchema = z.object({
 export type User = z.infer<typeof UserSchema>
 
 /////////////////////////////////////////
+// TELEGRAM MESSAGE SESSION SCHEMA
+/////////////////////////////////////////
+
+/**
+ * Telegram message session
+ */
+export const TelegramMessageSessionSchema = z.object({
+  id: z.number().int(),
+  key: z.string(),
+  value: z.string(),
+})
+
+export type TelegramMessageSession = z.infer<typeof TelegramMessageSessionSchema>
+
+/////////////////////////////////////////
 // SELECT & INCLUDE
 /////////////////////////////////////////
 
@@ -75,6 +92,15 @@ export const UserSelectSchema: z.ZodType<Prisma.UserSelect> = z.object({
   photoUrl: z.boolean().optional(),
   createdAt: z.boolean().optional(),
   updatedAt: z.boolean().optional(),
+}).strict()
+
+// TELEGRAM MESSAGE SESSION
+//------------------------------------------------------
+
+export const TelegramMessageSessionSelectSchema: z.ZodType<Prisma.TelegramMessageSessionSelect> = z.object({
+  id: z.boolean().optional(),
+  key: z.boolean().optional(),
+  value: z.boolean().optional(),
 }).strict()
 
 
@@ -161,6 +187,62 @@ export const UserScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.UserScal
   updatedAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
 }).strict();
 
+export const TelegramMessageSessionWhereInputSchema: z.ZodType<Prisma.TelegramMessageSessionWhereInput> = z.object({
+  AND: z.union([ z.lazy(() => TelegramMessageSessionWhereInputSchema),z.lazy(() => TelegramMessageSessionWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => TelegramMessageSessionWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => TelegramMessageSessionWhereInputSchema),z.lazy(() => TelegramMessageSessionWhereInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => IntFilterSchema),z.number() ]).optional(),
+  key: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  value: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+}).strict();
+
+export const TelegramMessageSessionOrderByWithRelationInputSchema: z.ZodType<Prisma.TelegramMessageSessionOrderByWithRelationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  key: z.lazy(() => SortOrderSchema).optional(),
+  value: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TelegramMessageSessionWhereUniqueInputSchema: z.ZodType<Prisma.TelegramMessageSessionWhereUniqueInput> = z.union([
+  z.object({
+    id: z.number().int(),
+    key: z.string()
+  }),
+  z.object({
+    id: z.number().int(),
+  }),
+  z.object({
+    key: z.string(),
+  }),
+])
+.and(z.object({
+  id: z.number().int().optional(),
+  key: z.string().optional(),
+  AND: z.union([ z.lazy(() => TelegramMessageSessionWhereInputSchema),z.lazy(() => TelegramMessageSessionWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => TelegramMessageSessionWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => TelegramMessageSessionWhereInputSchema),z.lazy(() => TelegramMessageSessionWhereInputSchema).array() ]).optional(),
+  value: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+}).strict());
+
+export const TelegramMessageSessionOrderByWithAggregationInputSchema: z.ZodType<Prisma.TelegramMessageSessionOrderByWithAggregationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  key: z.lazy(() => SortOrderSchema).optional(),
+  value: z.lazy(() => SortOrderSchema).optional(),
+  _count: z.lazy(() => TelegramMessageSessionCountOrderByAggregateInputSchema).optional(),
+  _avg: z.lazy(() => TelegramMessageSessionAvgOrderByAggregateInputSchema).optional(),
+  _max: z.lazy(() => TelegramMessageSessionMaxOrderByAggregateInputSchema).optional(),
+  _min: z.lazy(() => TelegramMessageSessionMinOrderByAggregateInputSchema).optional(),
+  _sum: z.lazy(() => TelegramMessageSessionSumOrderByAggregateInputSchema).optional()
+}).strict();
+
+export const TelegramMessageSessionScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.TelegramMessageSessionScalarWhereWithAggregatesInput> = z.object({
+  AND: z.union([ z.lazy(() => TelegramMessageSessionScalarWhereWithAggregatesInputSchema),z.lazy(() => TelegramMessageSessionScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  OR: z.lazy(() => TelegramMessageSessionScalarWhereWithAggregatesInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => TelegramMessageSessionScalarWhereWithAggregatesInputSchema),z.lazy(() => TelegramMessageSessionScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => IntWithAggregatesFilterSchema),z.number() ]).optional(),
+  key: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  value: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+}).strict();
+
 export const UserCreateInputSchema: z.ZodType<Prisma.UserCreateInput> = z.object({
   id: z.string().optional(),
   telegramId: z.string(),
@@ -236,6 +318,45 @@ export const UserUncheckedUpdateManyInputSchema: z.ZodType<Prisma.UserUncheckedU
   photoUrl: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TelegramMessageSessionCreateInputSchema: z.ZodType<Prisma.TelegramMessageSessionCreateInput> = z.object({
+  key: z.string(),
+  value: z.string()
+}).strict();
+
+export const TelegramMessageSessionUncheckedCreateInputSchema: z.ZodType<Prisma.TelegramMessageSessionUncheckedCreateInput> = z.object({
+  id: z.number().int().optional(),
+  key: z.string(),
+  value: z.string()
+}).strict();
+
+export const TelegramMessageSessionUpdateInputSchema: z.ZodType<Prisma.TelegramMessageSessionUpdateInput> = z.object({
+  key: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  value: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TelegramMessageSessionUncheckedUpdateInputSchema: z.ZodType<Prisma.TelegramMessageSessionUncheckedUpdateInput> = z.object({
+  id: z.union([ z.number().int(),z.lazy(() => IntFieldUpdateOperationsInputSchema) ]).optional(),
+  key: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  value: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TelegramMessageSessionCreateManyInputSchema: z.ZodType<Prisma.TelegramMessageSessionCreateManyInput> = z.object({
+  id: z.number().int().optional(),
+  key: z.string(),
+  value: z.string()
+}).strict();
+
+export const TelegramMessageSessionUpdateManyMutationInputSchema: z.ZodType<Prisma.TelegramMessageSessionUpdateManyMutationInput> = z.object({
+  key: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  value: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TelegramMessageSessionUncheckedUpdateManyInputSchema: z.ZodType<Prisma.TelegramMessageSessionUncheckedUpdateManyInput> = z.object({
+  id: z.union([ z.number().int(),z.lazy(() => IntFieldUpdateOperationsInputSchema) ]).optional(),
+  key: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  value: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
 
 export const StringFilterSchema: z.ZodType<Prisma.StringFilter> = z.object({
@@ -363,6 +484,59 @@ export const DateTimeWithAggregatesFilterSchema: z.ZodType<Prisma.DateTimeWithAg
   _max: z.lazy(() => NestedDateTimeFilterSchema).optional()
 }).strict();
 
+export const IntFilterSchema: z.ZodType<Prisma.IntFilter> = z.object({
+  equals: z.number().optional(),
+  in: z.number().array().optional(),
+  notIn: z.number().array().optional(),
+  lt: z.number().optional(),
+  lte: z.number().optional(),
+  gt: z.number().optional(),
+  gte: z.number().optional(),
+  not: z.union([ z.number(),z.lazy(() => NestedIntFilterSchema) ]).optional(),
+}).strict();
+
+export const TelegramMessageSessionCountOrderByAggregateInputSchema: z.ZodType<Prisma.TelegramMessageSessionCountOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  key: z.lazy(() => SortOrderSchema).optional(),
+  value: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TelegramMessageSessionAvgOrderByAggregateInputSchema: z.ZodType<Prisma.TelegramMessageSessionAvgOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TelegramMessageSessionMaxOrderByAggregateInputSchema: z.ZodType<Prisma.TelegramMessageSessionMaxOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  key: z.lazy(() => SortOrderSchema).optional(),
+  value: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TelegramMessageSessionMinOrderByAggregateInputSchema: z.ZodType<Prisma.TelegramMessageSessionMinOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  key: z.lazy(() => SortOrderSchema).optional(),
+  value: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TelegramMessageSessionSumOrderByAggregateInputSchema: z.ZodType<Prisma.TelegramMessageSessionSumOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const IntWithAggregatesFilterSchema: z.ZodType<Prisma.IntWithAggregatesFilter> = z.object({
+  equals: z.number().optional(),
+  in: z.number().array().optional(),
+  notIn: z.number().array().optional(),
+  lt: z.number().optional(),
+  lte: z.number().optional(),
+  gt: z.number().optional(),
+  gte: z.number().optional(),
+  not: z.union([ z.number(),z.lazy(() => NestedIntWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _avg: z.lazy(() => NestedFloatFilterSchema).optional(),
+  _sum: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedIntFilterSchema).optional(),
+  _max: z.lazy(() => NestedIntFilterSchema).optional()
+}).strict();
+
 export const StringFieldUpdateOperationsInputSchema: z.ZodType<Prisma.StringFieldUpdateOperationsInput> = z.object({
   set: z.string().optional()
 }).strict();
@@ -373,6 +547,14 @@ export const NullableStringFieldUpdateOperationsInputSchema: z.ZodType<Prisma.Nu
 
 export const DateTimeFieldUpdateOperationsInputSchema: z.ZodType<Prisma.DateTimeFieldUpdateOperationsInput> = z.object({
   set: z.coerce.date().optional()
+}).strict();
+
+export const IntFieldUpdateOperationsInputSchema: z.ZodType<Prisma.IntFieldUpdateOperationsInput> = z.object({
+  set: z.number().optional(),
+  increment: z.number().optional(),
+  decrement: z.number().optional(),
+  multiply: z.number().optional(),
+  divide: z.number().optional()
 }).strict();
 
 export const NestedStringFilterSchema: z.ZodType<Prisma.NestedStringFilter> = z.object({
@@ -484,6 +666,33 @@ export const NestedDateTimeWithAggregatesFilterSchema: z.ZodType<Prisma.NestedDa
   _max: z.lazy(() => NestedDateTimeFilterSchema).optional()
 }).strict();
 
+export const NestedIntWithAggregatesFilterSchema: z.ZodType<Prisma.NestedIntWithAggregatesFilter> = z.object({
+  equals: z.number().optional(),
+  in: z.number().array().optional(),
+  notIn: z.number().array().optional(),
+  lt: z.number().optional(),
+  lte: z.number().optional(),
+  gt: z.number().optional(),
+  gte: z.number().optional(),
+  not: z.union([ z.number(),z.lazy(() => NestedIntWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _avg: z.lazy(() => NestedFloatFilterSchema).optional(),
+  _sum: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedIntFilterSchema).optional(),
+  _max: z.lazy(() => NestedIntFilterSchema).optional()
+}).strict();
+
+export const NestedFloatFilterSchema: z.ZodType<Prisma.NestedFloatFilter> = z.object({
+  equals: z.number().optional(),
+  in: z.number().array().optional(),
+  notIn: z.number().array().optional(),
+  lt: z.number().optional(),
+  lte: z.number().optional(),
+  gt: z.number().optional(),
+  gte: z.number().optional(),
+  not: z.union([ z.number(),z.lazy(() => NestedFloatFilterSchema) ]).optional(),
+}).strict();
+
 /////////////////////////////////////////
 // ARGS
 /////////////////////////////////////////
@@ -545,6 +754,63 @@ export const UserFindUniqueOrThrowArgsSchema: z.ZodType<Prisma.UserFindUniqueOrT
   where: UserWhereUniqueInputSchema,
 }).strict() ;
 
+export const TelegramMessageSessionFindFirstArgsSchema: z.ZodType<Prisma.TelegramMessageSessionFindFirstArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereInputSchema.optional(),
+  orderBy: z.union([ TelegramMessageSessionOrderByWithRelationInputSchema.array(),TelegramMessageSessionOrderByWithRelationInputSchema ]).optional(),
+  cursor: TelegramMessageSessionWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ TelegramMessageSessionScalarFieldEnumSchema,TelegramMessageSessionScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const TelegramMessageSessionFindFirstOrThrowArgsSchema: z.ZodType<Prisma.TelegramMessageSessionFindFirstOrThrowArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereInputSchema.optional(),
+  orderBy: z.union([ TelegramMessageSessionOrderByWithRelationInputSchema.array(),TelegramMessageSessionOrderByWithRelationInputSchema ]).optional(),
+  cursor: TelegramMessageSessionWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ TelegramMessageSessionScalarFieldEnumSchema,TelegramMessageSessionScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const TelegramMessageSessionFindManyArgsSchema: z.ZodType<Prisma.TelegramMessageSessionFindManyArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereInputSchema.optional(),
+  orderBy: z.union([ TelegramMessageSessionOrderByWithRelationInputSchema.array(),TelegramMessageSessionOrderByWithRelationInputSchema ]).optional(),
+  cursor: TelegramMessageSessionWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ TelegramMessageSessionScalarFieldEnumSchema,TelegramMessageSessionScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const TelegramMessageSessionAggregateArgsSchema: z.ZodType<Prisma.TelegramMessageSessionAggregateArgs> = z.object({
+  where: TelegramMessageSessionWhereInputSchema.optional(),
+  orderBy: z.union([ TelegramMessageSessionOrderByWithRelationInputSchema.array(),TelegramMessageSessionOrderByWithRelationInputSchema ]).optional(),
+  cursor: TelegramMessageSessionWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const TelegramMessageSessionGroupByArgsSchema: z.ZodType<Prisma.TelegramMessageSessionGroupByArgs> = z.object({
+  where: TelegramMessageSessionWhereInputSchema.optional(),
+  orderBy: z.union([ TelegramMessageSessionOrderByWithAggregationInputSchema.array(),TelegramMessageSessionOrderByWithAggregationInputSchema ]).optional(),
+  by: TelegramMessageSessionScalarFieldEnumSchema.array(),
+  having: TelegramMessageSessionScalarWhereWithAggregatesInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const TelegramMessageSessionFindUniqueArgsSchema: z.ZodType<Prisma.TelegramMessageSessionFindUniqueArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereUniqueInputSchema,
+}).strict() ;
+
+export const TelegramMessageSessionFindUniqueOrThrowArgsSchema: z.ZodType<Prisma.TelegramMessageSessionFindUniqueOrThrowArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereUniqueInputSchema,
+}).strict() ;
+
 export const UserCreateArgsSchema: z.ZodType<Prisma.UserCreateArgs> = z.object({
   select: UserSelectSchema.optional(),
   data: z.union([ UserCreateInputSchema,UserUncheckedCreateInputSchema ]),
@@ -583,4 +849,44 @@ export const UserUpdateManyArgsSchema: z.ZodType<Prisma.UserUpdateManyArgs> = z.
 
 export const UserDeleteManyArgsSchema: z.ZodType<Prisma.UserDeleteManyArgs> = z.object({
   where: UserWhereInputSchema.optional(),
+}).strict() ;
+
+export const TelegramMessageSessionCreateArgsSchema: z.ZodType<Prisma.TelegramMessageSessionCreateArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  data: z.union([ TelegramMessageSessionCreateInputSchema,TelegramMessageSessionUncheckedCreateInputSchema ]),
+}).strict() ;
+
+export const TelegramMessageSessionUpsertArgsSchema: z.ZodType<Prisma.TelegramMessageSessionUpsertArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereUniqueInputSchema,
+  create: z.union([ TelegramMessageSessionCreateInputSchema,TelegramMessageSessionUncheckedCreateInputSchema ]),
+  update: z.union([ TelegramMessageSessionUpdateInputSchema,TelegramMessageSessionUncheckedUpdateInputSchema ]),
+}).strict() ;
+
+export const TelegramMessageSessionCreateManyArgsSchema: z.ZodType<Prisma.TelegramMessageSessionCreateManyArgs> = z.object({
+  data: z.union([ TelegramMessageSessionCreateManyInputSchema,TelegramMessageSessionCreateManyInputSchema.array() ]),
+}).strict() ;
+
+export const TelegramMessageSessionCreateManyAndReturnArgsSchema: z.ZodType<Prisma.TelegramMessageSessionCreateManyAndReturnArgs> = z.object({
+  data: z.union([ TelegramMessageSessionCreateManyInputSchema,TelegramMessageSessionCreateManyInputSchema.array() ]),
+}).strict() ;
+
+export const TelegramMessageSessionDeleteArgsSchema: z.ZodType<Prisma.TelegramMessageSessionDeleteArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  where: TelegramMessageSessionWhereUniqueInputSchema,
+}).strict() ;
+
+export const TelegramMessageSessionUpdateArgsSchema: z.ZodType<Prisma.TelegramMessageSessionUpdateArgs> = z.object({
+  select: TelegramMessageSessionSelectSchema.optional(),
+  data: z.union([ TelegramMessageSessionUpdateInputSchema,TelegramMessageSessionUncheckedUpdateInputSchema ]),
+  where: TelegramMessageSessionWhereUniqueInputSchema,
+}).strict() ;
+
+export const TelegramMessageSessionUpdateManyArgsSchema: z.ZodType<Prisma.TelegramMessageSessionUpdateManyArgs> = z.object({
+  data: z.union([ TelegramMessageSessionUpdateManyMutationInputSchema,TelegramMessageSessionUncheckedUpdateManyInputSchema ]),
+  where: TelegramMessageSessionWhereInputSchema.optional(),
+}).strict() ;
+
+export const TelegramMessageSessionDeleteManyArgsSchema: z.ZodType<Prisma.TelegramMessageSessionDeleteManyArgs> = z.object({
+  where: TelegramMessageSessionWhereInputSchema.optional(),
 }).strict() ;

@@ -1,19 +1,34 @@
 import type { FileApiFlavor, FileFlavor } from '@grammyjs/files'
 import type { HydrateApiFlavor, HydrateFlavor } from '@grammyjs/hydrate'
-import type { Api, Context, NextFunction, RawApi } from 'grammy'
+import type { User } from '@prisma/client'
+import type { Api, Context, NextFunction, RawApi, SessionFlavor } from 'grammy'
 import { autoRetry } from '@grammyjs/auto-retry'
 import { type ConversationFlavor, conversations, type StringWithCommandSuggestions } from '@grammyjs/conversations'
 import { hydrateFiles } from '@grammyjs/files'
 import { hydrateApi, hydrateContext } from '@grammyjs/hydrate'
-import { Bot } from 'grammy'
+import { run } from '@grammyjs/runner'
+import { PrismaAdapter } from '@grammyjs/storage-prisma'
+import { Bot, session } from 'grammy'
 import { inject } from 'inversify'
+import _ from 'lodash'
 import { Service } from '../../common/decorators/service.js'
-import { isDev } from '../../common/is.js'
 import logger from '../../common/logger.js'
+import { prisma } from '../../common/prisma.js'
 import { ENV } from '../../constants/env.js'
 import { UserService } from '../user/user.service.js'
 
-export type TGBotContext = FileFlavor<HydrateFlavor<ConversationFlavor<Context>>>
+export type TGBotUser = User
+
+export interface TGBotSessionData {
+  user: TGBotUser
+  paymentInfo?: {
+    productId?: string
+    orderId?: string
+  }
+  isAgreedToRules: boolean
+}
+
+export type TGBotContext = FileFlavor<HydrateFlavor<ConversationFlavor<Context>>> & SessionFlavor<TGBotSessionData>
 
 export type TGBotApi = FileApiFlavor<HydrateApiFlavor<Api>>
 
@@ -36,6 +51,7 @@ export interface TGCommand {
 @Service()
 export class TGBotService extends Bot<TGBotContext, TGBotApi> {
   private commands = new Map<string, TGCommand>()
+  private passUpdates = new Set<string>()
 
   constructor(
     @inject(UserService)
@@ -56,16 +72,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     }))
   }
 
-  override async start() {
-    if (isDev()) {
-      this.on('message', (ctx, next) => {
-        logger.debug(`[TGM] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: ${ctx.message?.text}`)
-
-        // if you want to let all the middleware after this one to be executed, you need to call next()
-        next()
-      })
-    }
-
+  private defineStartCommand() {
     this.defineCommand({
       command: 'start',
       description: 'Start!',
@@ -81,7 +88,9 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
         await message.react('🥰')
       },
     })
+  }
 
+  private defineHelpCommand() {
     this.defineCommand({
       command: 'help',
       description: 'Help!',
@@ -90,9 +99,52 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
         ctx.reply('Help!')
       },
     })
+  }
+
+  private registerSession() {
+    this.use(session({
+      initial: () => ({ user: {} as TGBotUser, isAgreedToRules: false }),
+      storage: new PrismaAdapter(prisma.telegramMessageSession),
+    }))
+
+    this.use(async (ctx, next) => {
+      logger.debug(`[TGM] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: ${ctx.message?.text}`)
+      const telegramId = ctx.chatId?.toString()
+      if (!telegramId) {
+        return next()
+      }
+
+      const isPass = this.passUpdates.has(telegramId)
+      logger.debug(`[TGBotService] isPass: ${isPass}`)
+
+      // if user is not set, or is not passed, then create a new user
+      // if user is set to skip updates, then do not update user
+      if (_.isEmpty(ctx.session.user) || !isPass) {
+        const user = await this.userService.createIfNotExists({
+          telegramId,
+          firstName: ctx.from?.first_name ?? '',
+          lastName: ctx.from?.last_name ?? '',
+          username: ctx.from?.username ?? '',
+        })
+
+        ctx.session.user = user
+
+        // after update, set user to skip updates, to avoid frequent database access
+        this.passUpdates.add(telegramId)
+      }
+      await next()
+    })
+
+    logger.info('Register session success')
+  }
+
+  async run() {
+    this.registerSession()
+    this.defineStartCommand()
+    this.defineHelpCommand()
 
     await this.setupCommands()
-    await super.start()
+    return run(this)
   }
 
   async restart() {
@@ -100,15 +152,95 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     await this.start()
   }
 
+  /**
+   * define a command
+   * @param params - command parameters
+   */
   defineCommand(params: TGCommand) {
     const { command, callback } = params
     this.command(command, callback)
     this.commands.set(command, params)
   }
 
+  /**
+   * setup commands
+   */
   setupCommands() {
     return this.api.setMyCommands(Array.from(this.commands.values())
       .filter(({ register }) => register !== false)
       .map(({ command, description }) => ({ command, description })))
+  }
+
+  /**
+   * dispatch a command
+   * @param ctx - context
+   * @param next - next function
+   * @param command - command
+   */
+  dispatchCommand(ctx: TGBotContext, next: NextFunction, command: string) {
+    const commandObj = this.commands.get(command)
+    if (!commandObj) {
+      return next()
+    }
+    return commandObj.callback(ctx, next)
+  }
+
+  /**
+   * update session
+   * @param ctx - context
+   * @param newSession - new session data
+   */
+  updateSession(ctx: TGBotContext, newSession: Partial<TGBotSessionData>) {
+    logger.debug(`[TGBotService] updateSession: ${JSON.stringify(newSession, null, 2)}`)
+    // directly assign to ctx.session, trigger Grammy's reactive mechanism(Object.defineProperty)
+    ctx.session = {
+      ...ctx.session,
+      ...newSession,
+    }
+  }
+
+  /**
+   * force update session data when next message is received
+   * @param telegramId - user id
+   */
+  forceUpdateSession(telegramId: string) {
+    if (!telegramId || !this.passUpdates.has(telegramId)) {
+      logger.warn(`[TGBotService] forceUpdateSession: telegramId ${telegramId} not found in passUpdates`)
+      return
+    }
+    this.passUpdates.delete(telegramId)
+  }
+
+  /**
+   * generate start link
+   * @param type - the type of the start link
+   * @param params - the params of the start link
+   * @returns the start link
+   */
+  generateStartLink(type: string, ...params: string[]) {
+    if (type.includes('_')) {
+      throw new Error('type cannot contain underscore')
+    }
+
+    const startParamString = `${type}_${params.join('_')}`
+
+    if (startParamString.length > 256)
+      throw new Error('start param string is too long')
+
+    return `https://t.me/${this.botInfo.username}?start=${startParamString}`
+  }
+
+  /**
+   * parse start param
+   * @param startParamString - the start param string
+   * @returns the type and params
+   */
+  parserStartParam<T extends string[] = []>(startParamString: string) {
+    const [type, ...params] = startParamString.split('_')
+
+    if (!type)
+      throw new Error('No type found')
+
+    return { type, params: params as T }
   }
 }
