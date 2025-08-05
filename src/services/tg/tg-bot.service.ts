@@ -21,11 +21,6 @@ export type TGBotUser = User
 
 export interface TGBotSessionData {
   user: TGBotUser
-  paymentInfo?: {
-    productId?: string
-    orderId?: string
-  }
-  isAgreedToRules: boolean
 }
 
 export type TGBotContext = FileFlavor<HydrateFlavor<ConversationFlavor<Context>>> & SessionFlavor<TGBotSessionData>
@@ -103,7 +98,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
 
   private registerSession() {
     this.use(session({
-      initial: () => ({ user: {} as TGBotUser, isAgreedToRules: false }),
+      initial: () => ({ user: {} as TGBotUser }),
       storage: new PrismaAdapter(prisma.telegramMessageSession),
     }))
 
