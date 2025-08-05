@@ -1,6 +1,6 @@
 import type { FileApiFlavor, FileFlavor } from '@grammyjs/files'
 import type { HydrateApiFlavor, HydrateFlavor } from '@grammyjs/hydrate'
-import type { Api, Context, NextFunction } from 'grammy'
+import type { Api, Context, NextFunction, RawApi } from 'grammy'
 import { autoRetry } from '@grammyjs/auto-retry'
 import { type ConversationFlavor, conversations, type StringWithCommandSuggestions } from '@grammyjs/conversations'
 import { hydrateFiles } from '@grammyjs/files'
@@ -14,7 +14,17 @@ import { ENV } from '../../constants/env.js'
 import { UserService } from '../user/user.service.js'
 
 export type TGBotContext = FileFlavor<HydrateFlavor<ConversationFlavor<Context>>>
+
 export type TGBotApi = FileApiFlavor<HydrateApiFlavor<Api>>
+
+export type TGBotMethods<R extends RawApi> = string & keyof R
+
+// eslint-disable-next-line ts/no-empty-object-type, ts/no-explicit-any
+export type TGBotPayload<M extends TGBotMethods<R>, R extends RawApi> = M extends unknown ? R[M] extends (signal?: AbortSignal) => unknown ? {} : R[M] extends (args: any, signal?: AbortSignal) => unknown ? Parameters<R[M]>[0] : never : never
+
+export type TGBotApiOther<R extends RawApi, M extends TGBotMethods<R>, X extends string = never> = Omit<TGBotPayload<M, R>, X>
+
+export type TGBotOther<M extends TGBotMethods<RawApi>, X extends string = never> = TGBotApiOther<RawApi, M, X>
 
 export interface TGCommand {
   command: StringWithCommandSuggestions
