@@ -25,7 +25,7 @@ export interface TGCommand {
 
 @Service()
 export class TGBotService extends Bot<TGBotContext, TGBotApi> {
-  private commands: TGCommand[] = []
+  private commands = new Map<string, TGCommand>()
 
   constructor(
     @inject(UserService)
@@ -91,14 +91,14 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
   }
 
   defineCommand(params: TGCommand) {
-    const { command, callback, register = true } = params
+    const { command, callback } = params
     this.command(command, callback)
-    if (register) {
-      this.commands.push(params)
-    }
+    this.commands.set(command, params)
   }
 
   setupCommands() {
-    return this.api.setMyCommands(this.commands.map(({ command, description }) => ({ command, description })))
+    return this.api.setMyCommands(Array.from(this.commands.values())
+      .filter(({ register }) => register !== false)
+      .map(({ command, description }) => ({ command, description })))
   }
 }
