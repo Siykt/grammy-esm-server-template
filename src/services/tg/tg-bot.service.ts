@@ -72,7 +72,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
       command: 'start',
       description: 'Start!',
       callback: async (ctx) => {
-        logger.debug(`[TGM] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: start command`)
+        logger.debug(`[TGBotService] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: start command`)
         const user = await this.userService.createIfNotExists({
           telegramId: ctx.message?.chat.id.toString() ?? '',
           username: ctx.message?.chat.username ?? '',
@@ -90,7 +90,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
       command: 'help',
       description: 'Help!',
       callback: (ctx) => {
-        logger.debug(`[TGM] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: help command`)
+        logger.debug(`[TGBotService] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: help command`)
         ctx.reply('Help!')
       },
     })
@@ -103,7 +103,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     }))
 
     this.use(async (ctx, next) => {
-      logger.debug(`[TGM] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: ${ctx.message?.text}`)
+      logger.debug(`[TGBotService] @${ctx.message?.chat.username}_${ctx.message?.chat.id}: ${ctx.message?.text}`)
       const telegramId = ctx.chatId?.toString()
       if (!telegramId) {
         return next()
@@ -130,7 +130,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
       await next()
     })
 
-    logger.info('Register session success')
+    logger.info('[TGBotService] Register session success')
   }
 
   async run() {
