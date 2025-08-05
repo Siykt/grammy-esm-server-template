@@ -1,9 +1,9 @@
 import type { Prisma } from '@prisma/client'
-import { injectable } from 'inversify'
 import { UserCreateInputSchema } from '../../../prisma/generated/zod/index.js'
+import { Service } from '../../common/decorators/service.js'
 import { prisma } from '../../common/prisma.js'
 
-@injectable()
+@Service()
 export class UserService {
   constructor() {}
 

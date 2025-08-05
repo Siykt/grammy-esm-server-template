@@ -1,11 +1,11 @@
 import { Container } from 'inversify'
+import { getRegisteredServices } from '../common/decorators/service.js'
 import { TGBotService } from './tg/tg-bot.service.js'
 import { UserService } from './user/user.service.js'
 
 export const container = new Container()
-export const services = [TGBotService, UserService]
 
-services.forEach((service) => {
+getRegisteredServices().forEach((service) => {
   container.bind(service).toSelf().inSingletonScope()
 })
 

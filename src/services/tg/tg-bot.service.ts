@@ -6,7 +6,8 @@ import { type ConversationFlavor, conversations, type StringWithCommandSuggestio
 import { hydrateFiles } from '@grammyjs/files'
 import { hydrateApi, hydrateContext } from '@grammyjs/hydrate'
 import { Bot } from 'grammy'
-import { inject, injectable } from 'inversify'
+import { inject } from 'inversify'
+import { Service } from '../../common/decorators/service.js'
 import { isDev } from '../../common/is.js'
 import logger from '../../common/logger.js'
 import { ENV } from '../../constants/env.js'
@@ -22,7 +23,7 @@ export interface TGCommand {
   register?: boolean
 }
 
-@injectable()
+@Service()
 export class TGBotService extends Bot<TGBotContext, TGBotApi> {
   private commands: TGCommand[] = []
 
