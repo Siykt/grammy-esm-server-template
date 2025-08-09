@@ -147,8 +147,8 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
   /**
    * Create a menu
    *
-   * If two menus have a dependency relationship,
-   * you must use menu.register() to register them in the bot.
+   * If two menus have a dependency relationship(submenu),
+   * you must use `menu.register()` to register them in the bot.
    * Otherwise, the menu will not take effect and an error will be reported:
    * `Cannot send menu ${id}! Did you forget to use bot.use() for it or try to send it through bot.api?`
    * @param id - menu id
