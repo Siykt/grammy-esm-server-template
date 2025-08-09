@@ -1,11 +1,13 @@
 import type { FileApiFlavor, FileFlavor } from '@grammyjs/files'
 import type { HydrateApiFlavor, HydrateFlavor } from '@grammyjs/hydrate'
+import type { MenuOptions } from '@grammyjs/menu'
 import type { User } from '@prisma/client'
 import type { Api, Context, NextFunction, RawApi, SessionFlavor } from 'grammy'
 import { autoRetry } from '@grammyjs/auto-retry'
 import { type ConversationFlavor, conversations, type StringWithCommandSuggestions } from '@grammyjs/conversations'
 import { hydrateFiles } from '@grammyjs/files'
 import { hydrateApi, hydrateContext } from '@grammyjs/hydrate'
+import { Menu } from '@grammyjs/menu'
 import { run } from '@grammyjs/runner'
 import { PrismaAdapter } from '@grammyjs/storage-prisma'
 import { Bot, session } from 'grammy'
@@ -142,9 +144,19 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     return run(this)
   }
 
-  async restart() {
-    await this.stop()
-    await this.start()
+  /**
+   * Create a menu
+   *
+   * If two menus have a dependency relationship,
+   * you must use menu.register() to register them in the bot.
+   * Otherwise, the menu will not take effect and an error will be reported:
+   * `Cannot send menu ${id}! Did you forget to use bot.use() for it or try to send it through bot.api?`
+   * @param id - menu id
+   * @param options - menu options
+   * @returns the menu
+   */
+  createMenu(id: string, options?: MenuOptions<TGBotContext>) {
+    return new Menu<TGBotContext>(id, options)
   }
 
   /**
