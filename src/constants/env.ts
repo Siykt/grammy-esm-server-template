@@ -20,4 +20,8 @@ export const ENV = {
   // Ton
   TON_CENTER_API_KEY: process.env.TON_CENTER_API_KEY ?? '',
   TON_WALLETS_APP_MANIFEST_URL: process.env.TON_WALLETS_APP_MANIFEST_URL ?? '',
+
+  // Socks proxy
+  SOCKS_PROXY_HOST: process.env.SOCKS_PROXY_HOST ?? '',
+  SOCKS_PROXY_PORT: process.env.SOCKS_PROXY_PORT ?? '',
 }

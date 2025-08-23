@@ -13,6 +13,7 @@ import { PrismaAdapter } from '@grammyjs/storage-prisma'
 import { Bot, session } from 'grammy'
 import { inject } from 'inversify'
 import _ from 'lodash'
+import { SocksProxyAgent } from 'socks-proxy-agent'
 import { Service } from '../../common/decorators/service.js'
 import logger from '../../common/logger.js'
 import { prisma } from '../../common/prisma.js'
@@ -54,7 +55,19 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     @inject(UserService)
     private readonly userService: UserService,
   ) {
-    super(ENV.TELEGRAM_BOT_TOKEN)
+    let socksAgent: SocksProxyAgent | undefined
+    if (ENV.SOCKS_PROXY_HOST && ENV.SOCKS_PROXY_PORT) {
+      socksAgent = new SocksProxyAgent(`socks5://${ENV.SOCKS_PROXY_HOST}:${ENV.SOCKS_PROXY_PORT}`)
+    }
+
+    super(ENV.TELEGRAM_BOT_TOKEN, {
+      client: {
+        baseFetchConfig: {
+          agent: socksAgent,
+          compress: true,
+        },
+      },
+    })
 
     this.use(hydrateContext())
     this.use(conversations())
