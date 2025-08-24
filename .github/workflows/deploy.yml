@@ -1,0 +1,103 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  DEPLOY_PATH: /opt/servers/short-video-bot
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache pnpm modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get short SHA
+        run: echo "SHA7=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Set repository name lowercase
+        run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        run: |
+          echo "Starting to build Docker image..."
+          docker build \
+            -t ${{ env.REGISTRY }}/${{ env.REPO_LC }}:sha-${{ env.SHA7 }} \
+            -t ${{ env.REGISTRY }}/${{ env.REPO_LC }}:latest .
+
+      - name: Push Docker image
+        run: |
+          echo "Pushing Docker image to registry..."
+          docker push ${{ env.REGISTRY }}/${{ env.REPO_LC }}:sha-${{ env.SHA7 }}
+          docker push ${{ env.REGISTRY }}/${{ env.REPO_LC }}:latest
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_PEM_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 120s
+          debug: true
+          script: |
+            set -e
+            echo "SSH connection successful, starting deployment"
+            cd ${{ env.DEPLOY_PATH }}
+            echo "Logging in to GitHub Container Registry..."
+            echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+            echo "Creating database volume..."
+            sudo docker volume create kiss-lust-db || true
+            echo "Pulling latest image..."
+            sudo docker pull ${{ env.REGISTRY }}/${{ env.REPO_LC }}:sha-${{ env.SHA7 }}
+            echo "Stopping old container..."
+            sudo docker stop kiss-lust || true
+            sudo docker rm kiss-lust || true
+            echo "Starting new container..."
+            sudo docker run -d \
+              --name kiss-lust \
+              --restart unless-stopped \
+              -v kiss-lust-db:/app/database \
+              -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+              -e SERVER_AUTH_PASSWORD="${{ secrets.SERVER_AUTH_PASSWORD }}" \
+              -e COMFY_UI_API_URL="${{ secrets.COMFY_UI_API_URL }}" \
+              -e COMFY_UI_WS_URL="${{ secrets.COMFY_UI_WS_URL }}" \
+              -e COMFY_UI_DEPLOYMENT_NAME="${{ secrets.COMFY_UI_DEPLOYMENT_NAME }}" \
+              -e TON_CENTER_API_KEY="${{ secrets.TON_CENTER_API_KEY }}" \
+              -e LOGGER_DIR_PATH="/app/logs" \
+              -e DATABASE_URL="file:/app/database/database.db" \
+              -e K8S_AUTOSCALE_ENABLED="${{ secrets.K8S_AUTOSCALE_ENABLED }}" \
+              -e K8S_NAMESPACE="${{ secrets.K8S_NAMESPACE }}" \
+              -e K8S_KUBECONFIG_BASE64="${{ secrets.K8S_KUBECONFIG_BASE64 }}" \
+              -e K8S_KUBECONFIG_PATH="${{ secrets.K8S_KUBECONFIG_PATH }}" \
+              -e K8S_CONTEXT="${{ secrets.K8S_CONTEXT }}" \
+              ${{ env.REGISTRY }}/${{ env.REPO_LC }}:sha-${{ env.SHA7 }}
+            echo "Waiting for service to start..."
+            sleep 5
+            echo "Checking container status..."
+            sudo docker ps | grep kiss-lust || (echo "Container failed to start" && exit 1)
+            echo "Deployment completed"
