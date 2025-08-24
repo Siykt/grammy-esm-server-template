@@ -37,3 +37,95 @@
 
 - [grammY 中文文档](https://grammy.dev/zh/)
 - [Prisma 官方文档（英文）](https://www.prisma.io/docs)
+ 
+## 技术栈
+
+- **运行时**：Node.js >= 18，ESM
+- **语言**：TypeScript 5
+- **框架**：grammY
+  - 插件：`@grammyjs/auto-retry`、`@grammyjs/conversations`、`@grammyjs/files`、`@grammyjs/hydrate`、`@grammyjs/menu`、`@grammyjs/runner`、`@grammyjs/storage-prisma`
+- **ORM**：Prisma（`@prisma/client`），默认使用 SQLite
+- **校验**：Zod + `zod-prisma-types`
+- **依赖注入**：Inversify + 装饰器/元数据
+- **构建**：tsup（ESM 输出），开发使用 `tsx`
+- **日志**：winston
+- **其它**：dotenv、lodash、nanoid、socks-proxy-agent
+- **TON**：`@ton/core`、`@tonconnect/sdk`、`@atp-tools/lib`
+
+## 目录结构
+
+```text
+.
+├── src
+│   ├── index.ts
+│   ├── common/
+│   ├── constants/
+│   ├── services/
+│   │   ├── tg/
+│   │   ├── user/
+│   │   └── web3/
+│   └── @types/
+├── prisma
+│   ├── schema.prisma
+│   └── generated/zod/
+├── tsconfig.json
+├── tsup.config.ts
+├── eslint.config.js
+└── README.md
+```
+
+## 环境变量
+
+在项目根目录创建 `.env` 文件。
+
+```ini
+# 必填
+TELEGRAM_BOT_TOKEN=xxxxxx
+
+# 数据库（Prisma）。SQLite 示例
+DATABASE_URL="file:./database/database.db"
+
+# 可选
+NODE_ENV=development
+LOGGER_DIR_PATH=./
+TELEGRAM_USE_WEBHOOK=false
+
+# TON 相关（可选）
+TON_CENTER_API_KEY=
+TON_WALLETS_APP_MANIFEST_URL=
+
+# Telegram 网络代理（可选）
+SOCKS_PROXY_HOST=
+SOCKS_PROXY_PORT=
+```
+
+说明：
+- 默认数据库为 SQLite（见 `prisma/schema.prisma`）。可按需修改 provider 与 `DATABASE_URL`。
+- `LOGGER_DIR_PATH` 控制 winston 日志文件写入目录。
+- TON 能力为可选，如不使用可不配置相关变量。
+
+## 脚本
+
+- `pnpm dev`：开发模式，热更新
+- `pnpm build`：使用 tsup 构建（ESM）
+- `pnpm start`：运行 `dist/` 产物
+- `pnpm lint`：对 `src` 进行 Lint 并自动修复
+- `postinstall`：`prisma generate`（生成 Prisma Client 和 Zod 类型）
+
+## 开发流程
+
+1. 安装依赖：`pnpm install`
+2. 配置 `.env`（见上）
+3. 初始化数据库（以 SQLite 为例）：
+   - 生成客户端：`pnpm install`（自动执行 `prisma generate`）
+   - 创建表结构：`npx prisma migrate dev --name init`
+4. 运行：`pnpm dev`
+
+## 部署
+
+- `.github/workflows/deploy.yml` 提供了示例工作流，支持构建 Docker 镜像并通过 SSH 部署到服务器。请根据实际基础设施调整环境变量、Secrets 与运行参数。
+- 容器最小环境变量建议：`TELEGRAM_BOT_TOKEN`、`DATABASE_URL`、`LOGGER_DIR_PATH`，以及按需的 TON 与代理配置。
+
+## 许可证
+
+MIT
