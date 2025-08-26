@@ -44,6 +44,7 @@ export interface TGCommand {
   description: string
   callback: (ctx: TGBotContext, next: NextFunction) => unknown
   register?: boolean
+  privite?: boolean
 }
 
 @Service()
@@ -178,7 +179,12 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
    */
   defineCommand(params: TGCommand) {
     const { command, callback } = params
-    this.command(command, callback)
+    if (params.privite) {
+      this.on('message').filter(ctx => ctx.msg.chat.type === 'private').command(command, callback)
+    }
+    else {
+      this.command(command, callback)
+    }
     this.commands.set(command, params)
   }
 
