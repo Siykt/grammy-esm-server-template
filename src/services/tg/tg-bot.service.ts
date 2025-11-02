@@ -18,6 +18,7 @@ import { Service } from '../../common/decorators/service.js'
 import logger from '../../common/logger.js'
 import { prisma } from '../../common/prisma.js'
 import { ENV } from '../../constants/env.js'
+import { PairService } from '../exchange/pair.service.js'
 import { UserService } from '../user/user.service.js'
 
 export type TGBotUser = User
@@ -55,6 +56,8 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
   constructor(
     @inject(UserService)
     private readonly userService: UserService,
+    @inject(PairService)
+    private readonly pairService: PairService,
   ) {
     let socksAgent: SocksProxyAgent | undefined
     if (ENV.SOCKS_PROXY_HOST && ENV.SOCKS_PROXY_PORT) {
@@ -112,6 +115,113 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     })
   }
 
+  private isAdmin(ctx: TGBotContext): boolean {
+    const id = ctx.chatId?.toString()
+    return !!id && ENV.ADMIN_TG_IDS.includes(id)
+  }
+
+  private definePairCommands() {
+    // /pair_add BTC/USDT [notes]
+    this.defineCommand({
+      command: 'pair_add',
+      description: '添加交易对: /pair_add BTC/USDT [notes]',
+      callback: async (ctx) => {
+        if (!this.isAdmin(ctx))
+          return ctx.reply('权限不足')
+        const text = ctx.message?.text ?? ''
+        const args = text.split(' ').slice(1)
+        const symbol = args[0]
+        const notes = args.slice(1).join(' ') || undefined
+        if (!symbol)
+          return ctx.reply('用法: /pair_add BTC/USDT [notes]')
+        try {
+          const row = await this.pairService.create({ symbol, notes, addedByTg: ctx.chatId?.toString() })
+          return ctx.reply(`已添加: ${row.symbol} (id=${row.id})`)
+        }
+        catch (e) {
+          return ctx.reply(`添加失败: ${(e as Error).message}`)
+        }
+      },
+    })
+
+    // /pair_list [enabled]
+    this.defineCommand({
+      command: 'pair_list',
+      description: '列出交易对: /pair_list [enabled]',
+      callback: async (ctx) => {
+        if (!this.isAdmin(ctx))
+          return ctx.reply('权限不足')
+        const arg = (ctx.message?.text ?? '').split(' ')[1]
+        const enabled = arg === undefined ? undefined : arg === 'true'
+        const list = await this.pairService.list({ enabled })
+        if (!list.length)
+          return ctx.reply('暂无交易对')
+        const msg = list.map(p => `${p.enabled ? '✅' : '❌'} ${p.symbol} (${p.isLinear ? 'U' : '币'}本位) id=${p.id}${p.notes ? ` | ${p.notes}` : ''}`).join('\n')
+        return ctx.reply(msg)
+      },
+    })
+
+    // /pair_edit <id> [enable|disable] [symbol <newSymbol>] [notes <text|null>]
+    this.defineCommand({
+      command: 'pair_edit',
+      description: '编辑交易对: /pair_edit <id> ...',
+      callback: async (ctx) => {
+        if (!this.isAdmin(ctx))
+          return ctx.reply('权限不足')
+        const parts = (ctx.message?.text ?? '').split(' ')
+        const id = parts[1]
+        if (!id)
+          return ctx.reply('用法: /pair_edit <id> [enable|disable] [symbol <newSymbol>] [notes <text|null>]')
+        let enabled: boolean | undefined
+        let symbol: string | undefined
+        let notes: string | null | undefined
+        for (let i = 2; i < parts.length; i++) {
+          const t = parts[i]
+          if (t === 'enable') {
+            enabled = true
+          }
+          else if (t === 'disable') {
+            enabled = false
+          }
+          else if (t === 'symbol') {
+            symbol = parts[++i]
+          }
+          else if (t === 'notes') {
+            const n = parts[++i]
+            notes = n === 'null' ? null : (n ?? '')
+          }
+        }
+        try {
+          const row = await this.pairService.update({ id, enabled, symbol, notes })
+          return ctx.reply(`已更新: ${row.symbol} (${row.enabled ? 'enabled' : 'disabled'})`)
+        }
+        catch (e) {
+          return ctx.reply(`更新失败: ${(e as Error).message}`)
+        }
+      },
+    })
+
+    // /pair_remove <id>
+    this.defineCommand({
+      command: 'pair_remove',
+      description: '删除交易对: /pair_remove <id>',
+      callback: async (ctx) => {
+        if (!this.isAdmin(ctx))
+          return ctx.reply('权限不足')
+        const id = (ctx.message?.text ?? '').split(' ')[1]
+        if (!id)
+          return ctx.reply('用法: /pair_remove <id>')
+        try {
+          await this.pairService.remove(id)
+          return ctx.reply('已删除')
+        }
+        catch (e) {
+          return ctx.reply(`删除失败: ${(e as Error).message}`)
+        }
+      },
+    })
+  }
+
   private registerSession() {
     this.use(session({
       initial: () => ({ user: {} as TGBotUser }),
@@ -153,6 +263,7 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     this.registerSession()
     this.defineStartCommand()
     this.defineHelpCommand()
+    this.definePairCommands()
 
     await this.setupCommands()
     return run(this)

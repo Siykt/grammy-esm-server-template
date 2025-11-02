@@ -24,4 +24,10 @@ export const ENV = {
   // Socks proxy
   SOCKS_PROXY_HOST: process.env.SOCKS_PROXY_HOST ?? '',
   SOCKS_PROXY_PORT: process.env.SOCKS_PROXY_PORT ?? '',
+
+  // Server
+  SERVER_AUTH_PASSWORD: process.env.SERVER_AUTH_PASSWORD ?? '',
+
+  // Admins (comma separated telegram ids)
+  ADMIN_TG_IDS: (process.env.ADMIN_TG_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean),
 }

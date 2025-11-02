@@ -1,5 +1,7 @@
 import { Container } from 'inversify'
 import { getRegisteredServices } from '../common/decorators/service.js'
+import { ExchangeService } from './exchange/exchange.service.js'
+import { ExchangeMonitorService } from './exchange/monitor.service.js'
 import { TGBotService } from './tg/tg-bot.service.js'
 import { TGPaymentService } from './tg/tg-payment.service.js'
 import { UserService } from './user/user.service.js'
@@ -13,3 +15,5 @@ getRegisteredServices().forEach((service) => {
 export const tgBotService = container.get(TGBotService)
 export const userService = container.get(UserService)
 export const tgPaymentService = container.get(TGPaymentService)
+export const exchangeService = container.get(ExchangeService)
+export const exchangeMonitorService = container.get(ExchangeMonitorService)

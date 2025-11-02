@@ -16,6 +16,10 @@ export const UserScalarFieldEnumSchema = z.enum(['id','telegramId','username','f
 
 export const TelegramMessageSessionScalarFieldEnumSchema = z.enum(['id','key','value']);
 
+export const ExchangeCredentialScalarFieldEnumSchema = z.enum(['id','exchangeId','apiKeyEnc','apiSecretEnc','passphraseEnc','createdAt','updatedAt']);
+
+export const TradingPairScalarFieldEnumSchema = z.enum(['id','symbol','base','quote','isLinear','enabled','notes','addedByTg','createdAt','updatedAt']);
+
 export const SortOrderSchema = z.enum(['asc','desc']);
 
 export const NullsOrderSchema = z.enum(['first','last']);
@@ -77,6 +81,47 @@ export const TelegramMessageSessionSchema = z.object({
 export type TelegramMessageSession = z.infer<typeof TelegramMessageSessionSchema>
 
 /////////////////////////////////////////
+// EXCHANGE CREDENTIAL SCHEMA
+/////////////////////////////////////////
+
+/**
+ * 交易所 API 凭证（使用 SERVER_AUTH_PASSWORD 加密后存储）
+ */
+export const ExchangeCredentialSchema = z.object({
+  id: z.string(),
+  exchangeId: z.string(),
+  apiKeyEnc: z.string(),
+  apiSecretEnc: z.string(),
+  passphraseEnc: z.string().nullable(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+})
+
+export type ExchangeCredential = z.infer<typeof ExchangeCredentialSchema>
+
+/////////////////////////////////////////
+// TRADING PAIR SCHEMA
+/////////////////////////////////////////
+
+/**
+ * 监控的交易对（统一使用 base/quote 与原始 symbol 存储）
+ */
+export const TradingPairSchema = z.object({
+  id: z.string(),
+  symbol: z.string(),
+  base: z.string(),
+  quote: z.string(),
+  isLinear: z.boolean(),
+  enabled: z.boolean(),
+  notes: z.string().nullable(),
+  addedByTg: z.string().nullable(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+})
+
+export type TradingPair = z.infer<typeof TradingPairSchema>
+
+/////////////////////////////////////////
 // SELECT & INCLUDE
 /////////////////////////////////////////
 
@@ -101,6 +146,35 @@ export const TelegramMessageSessionSelectSchema: z.ZodType<Prisma.TelegramMessag
   id: z.boolean().optional(),
   key: z.boolean().optional(),
   value: z.boolean().optional(),
+}).strict()
+
+// EXCHANGE CREDENTIAL
+//------------------------------------------------------
+
+export const ExchangeCredentialSelectSchema: z.ZodType<Prisma.ExchangeCredentialSelect> = z.object({
+  id: z.boolean().optional(),
+  exchangeId: z.boolean().optional(),
+  apiKeyEnc: z.boolean().optional(),
+  apiSecretEnc: z.boolean().optional(),
+  passphraseEnc: z.boolean().optional(),
+  createdAt: z.boolean().optional(),
+  updatedAt: z.boolean().optional(),
+}).strict()
+
+// TRADING PAIR
+//------------------------------------------------------
+
+export const TradingPairSelectSchema: z.ZodType<Prisma.TradingPairSelect> = z.object({
+  id: z.boolean().optional(),
+  symbol: z.boolean().optional(),
+  base: z.boolean().optional(),
+  quote: z.boolean().optional(),
+  isLinear: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+  notes: z.boolean().optional(),
+  addedByTg: z.boolean().optional(),
+  createdAt: z.boolean().optional(),
+  updatedAt: z.boolean().optional(),
 }).strict()
 
 
@@ -243,6 +317,169 @@ export const TelegramMessageSessionScalarWhereWithAggregatesInputSchema: z.ZodTy
   value: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
 }).strict();
 
+export const ExchangeCredentialWhereInputSchema: z.ZodType<Prisma.ExchangeCredentialWhereInput> = z.object({
+  AND: z.union([ z.lazy(() => ExchangeCredentialWhereInputSchema),z.lazy(() => ExchangeCredentialWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => ExchangeCredentialWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => ExchangeCredentialWhereInputSchema),z.lazy(() => ExchangeCredentialWhereInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  exchangeId: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  apiKeyEnc: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  apiSecretEnc: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  passphraseEnc: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+}).strict();
+
+export const ExchangeCredentialOrderByWithRelationInputSchema: z.ZodType<Prisma.ExchangeCredentialOrderByWithRelationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  exchangeId: z.lazy(() => SortOrderSchema).optional(),
+  apiKeyEnc: z.lazy(() => SortOrderSchema).optional(),
+  apiSecretEnc: z.lazy(() => SortOrderSchema).optional(),
+  passphraseEnc: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const ExchangeCredentialWhereUniqueInputSchema: z.ZodType<Prisma.ExchangeCredentialWhereUniqueInput> = z.union([
+  z.object({
+    id: z.string(),
+    exchangeId: z.string()
+  }),
+  z.object({
+    id: z.string(),
+  }),
+  z.object({
+    exchangeId: z.string(),
+  }),
+])
+.and(z.object({
+  id: z.string().optional(),
+  exchangeId: z.string().optional(),
+  AND: z.union([ z.lazy(() => ExchangeCredentialWhereInputSchema),z.lazy(() => ExchangeCredentialWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => ExchangeCredentialWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => ExchangeCredentialWhereInputSchema),z.lazy(() => ExchangeCredentialWhereInputSchema).array() ]).optional(),
+  apiKeyEnc: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  apiSecretEnc: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  passphraseEnc: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+}).strict());
+
+export const ExchangeCredentialOrderByWithAggregationInputSchema: z.ZodType<Prisma.ExchangeCredentialOrderByWithAggregationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  exchangeId: z.lazy(() => SortOrderSchema).optional(),
+  apiKeyEnc: z.lazy(() => SortOrderSchema).optional(),
+  apiSecretEnc: z.lazy(() => SortOrderSchema).optional(),
+  passphraseEnc: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional(),
+  _count: z.lazy(() => ExchangeCredentialCountOrderByAggregateInputSchema).optional(),
+  _max: z.lazy(() => ExchangeCredentialMaxOrderByAggregateInputSchema).optional(),
+  _min: z.lazy(() => ExchangeCredentialMinOrderByAggregateInputSchema).optional()
+}).strict();
+
+export const ExchangeCredentialScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.ExchangeCredentialScalarWhereWithAggregatesInput> = z.object({
+  AND: z.union([ z.lazy(() => ExchangeCredentialScalarWhereWithAggregatesInputSchema),z.lazy(() => ExchangeCredentialScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  OR: z.lazy(() => ExchangeCredentialScalarWhereWithAggregatesInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => ExchangeCredentialScalarWhereWithAggregatesInputSchema),z.lazy(() => ExchangeCredentialScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  exchangeId: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  apiKeyEnc: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  apiSecretEnc: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  passphraseEnc: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
+}).strict();
+
+export const TradingPairWhereInputSchema: z.ZodType<Prisma.TradingPairWhereInput> = z.object({
+  AND: z.union([ z.lazy(() => TradingPairWhereInputSchema),z.lazy(() => TradingPairWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => TradingPairWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => TradingPairWhereInputSchema),z.lazy(() => TradingPairWhereInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  symbol: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  base: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  quote: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  isLinear: z.union([ z.lazy(() => BoolFilterSchema),z.boolean() ]).optional(),
+  enabled: z.union([ z.lazy(() => BoolFilterSchema),z.boolean() ]).optional(),
+  notes: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  addedByTg: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+}).strict();
+
+export const TradingPairOrderByWithRelationInputSchema: z.ZodType<Prisma.TradingPairOrderByWithRelationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  symbol: z.lazy(() => SortOrderSchema).optional(),
+  base: z.lazy(() => SortOrderSchema).optional(),
+  quote: z.lazy(() => SortOrderSchema).optional(),
+  isLinear: z.lazy(() => SortOrderSchema).optional(),
+  enabled: z.lazy(() => SortOrderSchema).optional(),
+  notes: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  addedByTg: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TradingPairWhereUniqueInputSchema: z.ZodType<Prisma.TradingPairWhereUniqueInput> = z.union([
+  z.object({
+    id: z.string(),
+    symbol: z.string()
+  }),
+  z.object({
+    id: z.string(),
+  }),
+  z.object({
+    symbol: z.string(),
+  }),
+])
+.and(z.object({
+  id: z.string().optional(),
+  symbol: z.string().optional(),
+  AND: z.union([ z.lazy(() => TradingPairWhereInputSchema),z.lazy(() => TradingPairWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => TradingPairWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => TradingPairWhereInputSchema),z.lazy(() => TradingPairWhereInputSchema).array() ]).optional(),
+  base: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  quote: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  isLinear: z.union([ z.lazy(() => BoolFilterSchema),z.boolean() ]).optional(),
+  enabled: z.union([ z.lazy(() => BoolFilterSchema),z.boolean() ]).optional(),
+  notes: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  addedByTg: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+}).strict());
+
+export const TradingPairOrderByWithAggregationInputSchema: z.ZodType<Prisma.TradingPairOrderByWithAggregationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  symbol: z.lazy(() => SortOrderSchema).optional(),
+  base: z.lazy(() => SortOrderSchema).optional(),
+  quote: z.lazy(() => SortOrderSchema).optional(),
+  isLinear: z.lazy(() => SortOrderSchema).optional(),
+  enabled: z.lazy(() => SortOrderSchema).optional(),
+  notes: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  addedByTg: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional(),
+  _count: z.lazy(() => TradingPairCountOrderByAggregateInputSchema).optional(),
+  _max: z.lazy(() => TradingPairMaxOrderByAggregateInputSchema).optional(),
+  _min: z.lazy(() => TradingPairMinOrderByAggregateInputSchema).optional()
+}).strict();
+
+export const TradingPairScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.TradingPairScalarWhereWithAggregatesInput> = z.object({
+  AND: z.union([ z.lazy(() => TradingPairScalarWhereWithAggregatesInputSchema),z.lazy(() => TradingPairScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  OR: z.lazy(() => TradingPairScalarWhereWithAggregatesInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => TradingPairScalarWhereWithAggregatesInputSchema),z.lazy(() => TradingPairScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  symbol: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  base: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  quote: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  isLinear: z.union([ z.lazy(() => BoolWithAggregatesFilterSchema),z.boolean() ]).optional(),
+  enabled: z.union([ z.lazy(() => BoolWithAggregatesFilterSchema),z.boolean() ]).optional(),
+  notes: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
+  addedByTg: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
+}).strict();
+
 export const UserCreateInputSchema: z.ZodType<Prisma.UserCreateInput> = z.object({
   id: z.string().optional(),
   telegramId: z.string(),
@@ -357,6 +594,167 @@ export const TelegramMessageSessionUncheckedUpdateManyInputSchema: z.ZodType<Pri
   id: z.union([ z.number().int(),z.lazy(() => IntFieldUpdateOperationsInputSchema) ]).optional(),
   key: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
   value: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const ExchangeCredentialCreateInputSchema: z.ZodType<Prisma.ExchangeCredentialCreateInput> = z.object({
+  id: z.string().optional(),
+  exchangeId: z.string(),
+  apiKeyEnc: z.string(),
+  apiSecretEnc: z.string(),
+  passphraseEnc: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional()
+}).strict();
+
+export const ExchangeCredentialUncheckedCreateInputSchema: z.ZodType<Prisma.ExchangeCredentialUncheckedCreateInput> = z.object({
+  id: z.string().optional(),
+  exchangeId: z.string(),
+  apiKeyEnc: z.string(),
+  apiSecretEnc: z.string(),
+  passphraseEnc: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional()
+}).strict();
+
+export const ExchangeCredentialUpdateInputSchema: z.ZodType<Prisma.ExchangeCredentialUpdateInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  exchangeId: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiKeyEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiSecretEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  passphraseEnc: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const ExchangeCredentialUncheckedUpdateInputSchema: z.ZodType<Prisma.ExchangeCredentialUncheckedUpdateInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  exchangeId: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiKeyEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiSecretEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  passphraseEnc: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const ExchangeCredentialCreateManyInputSchema: z.ZodType<Prisma.ExchangeCredentialCreateManyInput> = z.object({
+  id: z.string().optional(),
+  exchangeId: z.string(),
+  apiKeyEnc: z.string(),
+  apiSecretEnc: z.string(),
+  passphraseEnc: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional()
+}).strict();
+
+export const ExchangeCredentialUpdateManyMutationInputSchema: z.ZodType<Prisma.ExchangeCredentialUpdateManyMutationInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  exchangeId: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiKeyEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiSecretEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  passphraseEnc: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const ExchangeCredentialUncheckedUpdateManyInputSchema: z.ZodType<Prisma.ExchangeCredentialUncheckedUpdateManyInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  exchangeId: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiKeyEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  apiSecretEnc: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  passphraseEnc: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TradingPairCreateInputSchema: z.ZodType<Prisma.TradingPairCreateInput> = z.object({
+  id: z.string().optional(),
+  symbol: z.string(),
+  base: z.string(),
+  quote: z.string(),
+  isLinear: z.boolean(),
+  enabled: z.boolean().optional(),
+  notes: z.string().optional().nullable(),
+  addedByTg: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional()
+}).strict();
+
+export const TradingPairUncheckedCreateInputSchema: z.ZodType<Prisma.TradingPairUncheckedCreateInput> = z.object({
+  id: z.string().optional(),
+  symbol: z.string(),
+  base: z.string(),
+  quote: z.string(),
+  isLinear: z.boolean(),
+  enabled: z.boolean().optional(),
+  notes: z.string().optional().nullable(),
+  addedByTg: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional()
+}).strict();
+
+export const TradingPairUpdateInputSchema: z.ZodType<Prisma.TradingPairUpdateInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  symbol: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  base: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  quote: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  isLinear: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  enabled: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  notes: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  addedByTg: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TradingPairUncheckedUpdateInputSchema: z.ZodType<Prisma.TradingPairUncheckedUpdateInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  symbol: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  base: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  quote: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  isLinear: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  enabled: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  notes: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  addedByTg: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TradingPairCreateManyInputSchema: z.ZodType<Prisma.TradingPairCreateManyInput> = z.object({
+  id: z.string().optional(),
+  symbol: z.string(),
+  base: z.string(),
+  quote: z.string(),
+  isLinear: z.boolean(),
+  enabled: z.boolean().optional(),
+  notes: z.string().optional().nullable(),
+  addedByTg: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional()
+}).strict();
+
+export const TradingPairUpdateManyMutationInputSchema: z.ZodType<Prisma.TradingPairUpdateManyMutationInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  symbol: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  base: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  quote: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  isLinear: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  enabled: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  notes: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  addedByTg: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const TradingPairUncheckedUpdateManyInputSchema: z.ZodType<Prisma.TradingPairUncheckedUpdateManyInput> = z.object({
+  id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  symbol: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  base: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  quote: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  isLinear: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  enabled: z.union([ z.boolean(),z.lazy(() => BoolFieldUpdateOperationsInputSchema) ]).optional(),
+  notes: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  addedByTg: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
 
 export const StringFilterSchema: z.ZodType<Prisma.StringFilter> = z.object({
@@ -537,6 +935,88 @@ export const IntWithAggregatesFilterSchema: z.ZodType<Prisma.IntWithAggregatesFi
   _max: z.lazy(() => NestedIntFilterSchema).optional()
 }).strict();
 
+export const ExchangeCredentialCountOrderByAggregateInputSchema: z.ZodType<Prisma.ExchangeCredentialCountOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  exchangeId: z.lazy(() => SortOrderSchema).optional(),
+  apiKeyEnc: z.lazy(() => SortOrderSchema).optional(),
+  apiSecretEnc: z.lazy(() => SortOrderSchema).optional(),
+  passphraseEnc: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const ExchangeCredentialMaxOrderByAggregateInputSchema: z.ZodType<Prisma.ExchangeCredentialMaxOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  exchangeId: z.lazy(() => SortOrderSchema).optional(),
+  apiKeyEnc: z.lazy(() => SortOrderSchema).optional(),
+  apiSecretEnc: z.lazy(() => SortOrderSchema).optional(),
+  passphraseEnc: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const ExchangeCredentialMinOrderByAggregateInputSchema: z.ZodType<Prisma.ExchangeCredentialMinOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  exchangeId: z.lazy(() => SortOrderSchema).optional(),
+  apiKeyEnc: z.lazy(() => SortOrderSchema).optional(),
+  apiSecretEnc: z.lazy(() => SortOrderSchema).optional(),
+  passphraseEnc: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const BoolFilterSchema: z.ZodType<Prisma.BoolFilter> = z.object({
+  equals: z.boolean().optional(),
+  not: z.union([ z.boolean(),z.lazy(() => NestedBoolFilterSchema) ]).optional(),
+}).strict();
+
+export const TradingPairCountOrderByAggregateInputSchema: z.ZodType<Prisma.TradingPairCountOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  symbol: z.lazy(() => SortOrderSchema).optional(),
+  base: z.lazy(() => SortOrderSchema).optional(),
+  quote: z.lazy(() => SortOrderSchema).optional(),
+  isLinear: z.lazy(() => SortOrderSchema).optional(),
+  enabled: z.lazy(() => SortOrderSchema).optional(),
+  notes: z.lazy(() => SortOrderSchema).optional(),
+  addedByTg: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TradingPairMaxOrderByAggregateInputSchema: z.ZodType<Prisma.TradingPairMaxOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  symbol: z.lazy(() => SortOrderSchema).optional(),
+  base: z.lazy(() => SortOrderSchema).optional(),
+  quote: z.lazy(() => SortOrderSchema).optional(),
+  isLinear: z.lazy(() => SortOrderSchema).optional(),
+  enabled: z.lazy(() => SortOrderSchema).optional(),
+  notes: z.lazy(() => SortOrderSchema).optional(),
+  addedByTg: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const TradingPairMinOrderByAggregateInputSchema: z.ZodType<Prisma.TradingPairMinOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  symbol: z.lazy(() => SortOrderSchema).optional(),
+  base: z.lazy(() => SortOrderSchema).optional(),
+  quote: z.lazy(() => SortOrderSchema).optional(),
+  isLinear: z.lazy(() => SortOrderSchema).optional(),
+  enabled: z.lazy(() => SortOrderSchema).optional(),
+  notes: z.lazy(() => SortOrderSchema).optional(),
+  addedByTg: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  updatedAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const BoolWithAggregatesFilterSchema: z.ZodType<Prisma.BoolWithAggregatesFilter> = z.object({
+  equals: z.boolean().optional(),
+  not: z.union([ z.boolean(),z.lazy(() => NestedBoolWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedBoolFilterSchema).optional(),
+  _max: z.lazy(() => NestedBoolFilterSchema).optional()
+}).strict();
+
 export const StringFieldUpdateOperationsInputSchema: z.ZodType<Prisma.StringFieldUpdateOperationsInput> = z.object({
   set: z.string().optional()
 }).strict();
@@ -555,6 +1035,10 @@ export const IntFieldUpdateOperationsInputSchema: z.ZodType<Prisma.IntFieldUpdat
   decrement: z.number().optional(),
   multiply: z.number().optional(),
   divide: z.number().optional()
+}).strict();
+
+export const BoolFieldUpdateOperationsInputSchema: z.ZodType<Prisma.BoolFieldUpdateOperationsInput> = z.object({
+  set: z.boolean().optional()
 }).strict();
 
 export const NestedStringFilterSchema: z.ZodType<Prisma.NestedStringFilter> = z.object({
@@ -693,6 +1177,19 @@ export const NestedFloatFilterSchema: z.ZodType<Prisma.NestedFloatFilter> = z.ob
   not: z.union([ z.number(),z.lazy(() => NestedFloatFilterSchema) ]).optional(),
 }).strict();
 
+export const NestedBoolFilterSchema: z.ZodType<Prisma.NestedBoolFilter> = z.object({
+  equals: z.boolean().optional(),
+  not: z.union([ z.boolean(),z.lazy(() => NestedBoolFilterSchema) ]).optional(),
+}).strict();
+
+export const NestedBoolWithAggregatesFilterSchema: z.ZodType<Prisma.NestedBoolWithAggregatesFilter> = z.object({
+  equals: z.boolean().optional(),
+  not: z.union([ z.boolean(),z.lazy(() => NestedBoolWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedBoolFilterSchema).optional(),
+  _max: z.lazy(() => NestedBoolFilterSchema).optional()
+}).strict();
+
 /////////////////////////////////////////
 // ARGS
 /////////////////////////////////////////
@@ -811,6 +1308,120 @@ export const TelegramMessageSessionFindUniqueOrThrowArgsSchema: z.ZodType<Prisma
   where: TelegramMessageSessionWhereUniqueInputSchema,
 }).strict() ;
 
+export const ExchangeCredentialFindFirstArgsSchema: z.ZodType<Prisma.ExchangeCredentialFindFirstArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereInputSchema.optional(),
+  orderBy: z.union([ ExchangeCredentialOrderByWithRelationInputSchema.array(),ExchangeCredentialOrderByWithRelationInputSchema ]).optional(),
+  cursor: ExchangeCredentialWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ ExchangeCredentialScalarFieldEnumSchema,ExchangeCredentialScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const ExchangeCredentialFindFirstOrThrowArgsSchema: z.ZodType<Prisma.ExchangeCredentialFindFirstOrThrowArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereInputSchema.optional(),
+  orderBy: z.union([ ExchangeCredentialOrderByWithRelationInputSchema.array(),ExchangeCredentialOrderByWithRelationInputSchema ]).optional(),
+  cursor: ExchangeCredentialWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ ExchangeCredentialScalarFieldEnumSchema,ExchangeCredentialScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const ExchangeCredentialFindManyArgsSchema: z.ZodType<Prisma.ExchangeCredentialFindManyArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereInputSchema.optional(),
+  orderBy: z.union([ ExchangeCredentialOrderByWithRelationInputSchema.array(),ExchangeCredentialOrderByWithRelationInputSchema ]).optional(),
+  cursor: ExchangeCredentialWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ ExchangeCredentialScalarFieldEnumSchema,ExchangeCredentialScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const ExchangeCredentialAggregateArgsSchema: z.ZodType<Prisma.ExchangeCredentialAggregateArgs> = z.object({
+  where: ExchangeCredentialWhereInputSchema.optional(),
+  orderBy: z.union([ ExchangeCredentialOrderByWithRelationInputSchema.array(),ExchangeCredentialOrderByWithRelationInputSchema ]).optional(),
+  cursor: ExchangeCredentialWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const ExchangeCredentialGroupByArgsSchema: z.ZodType<Prisma.ExchangeCredentialGroupByArgs> = z.object({
+  where: ExchangeCredentialWhereInputSchema.optional(),
+  orderBy: z.union([ ExchangeCredentialOrderByWithAggregationInputSchema.array(),ExchangeCredentialOrderByWithAggregationInputSchema ]).optional(),
+  by: ExchangeCredentialScalarFieldEnumSchema.array(),
+  having: ExchangeCredentialScalarWhereWithAggregatesInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const ExchangeCredentialFindUniqueArgsSchema: z.ZodType<Prisma.ExchangeCredentialFindUniqueArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereUniqueInputSchema,
+}).strict() ;
+
+export const ExchangeCredentialFindUniqueOrThrowArgsSchema: z.ZodType<Prisma.ExchangeCredentialFindUniqueOrThrowArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereUniqueInputSchema,
+}).strict() ;
+
+export const TradingPairFindFirstArgsSchema: z.ZodType<Prisma.TradingPairFindFirstArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereInputSchema.optional(),
+  orderBy: z.union([ TradingPairOrderByWithRelationInputSchema.array(),TradingPairOrderByWithRelationInputSchema ]).optional(),
+  cursor: TradingPairWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ TradingPairScalarFieldEnumSchema,TradingPairScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const TradingPairFindFirstOrThrowArgsSchema: z.ZodType<Prisma.TradingPairFindFirstOrThrowArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereInputSchema.optional(),
+  orderBy: z.union([ TradingPairOrderByWithRelationInputSchema.array(),TradingPairOrderByWithRelationInputSchema ]).optional(),
+  cursor: TradingPairWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ TradingPairScalarFieldEnumSchema,TradingPairScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const TradingPairFindManyArgsSchema: z.ZodType<Prisma.TradingPairFindManyArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereInputSchema.optional(),
+  orderBy: z.union([ TradingPairOrderByWithRelationInputSchema.array(),TradingPairOrderByWithRelationInputSchema ]).optional(),
+  cursor: TradingPairWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ TradingPairScalarFieldEnumSchema,TradingPairScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const TradingPairAggregateArgsSchema: z.ZodType<Prisma.TradingPairAggregateArgs> = z.object({
+  where: TradingPairWhereInputSchema.optional(),
+  orderBy: z.union([ TradingPairOrderByWithRelationInputSchema.array(),TradingPairOrderByWithRelationInputSchema ]).optional(),
+  cursor: TradingPairWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const TradingPairGroupByArgsSchema: z.ZodType<Prisma.TradingPairGroupByArgs> = z.object({
+  where: TradingPairWhereInputSchema.optional(),
+  orderBy: z.union([ TradingPairOrderByWithAggregationInputSchema.array(),TradingPairOrderByWithAggregationInputSchema ]).optional(),
+  by: TradingPairScalarFieldEnumSchema.array(),
+  having: TradingPairScalarWhereWithAggregatesInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const TradingPairFindUniqueArgsSchema: z.ZodType<Prisma.TradingPairFindUniqueArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereUniqueInputSchema,
+}).strict() ;
+
+export const TradingPairFindUniqueOrThrowArgsSchema: z.ZodType<Prisma.TradingPairFindUniqueOrThrowArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereUniqueInputSchema,
+}).strict() ;
+
 export const UserCreateArgsSchema: z.ZodType<Prisma.UserCreateArgs> = z.object({
   select: UserSelectSchema.optional(),
   data: z.union([ UserCreateInputSchema,UserUncheckedCreateInputSchema ]),
@@ -889,4 +1500,84 @@ export const TelegramMessageSessionUpdateManyArgsSchema: z.ZodType<Prisma.Telegr
 
 export const TelegramMessageSessionDeleteManyArgsSchema: z.ZodType<Prisma.TelegramMessageSessionDeleteManyArgs> = z.object({
   where: TelegramMessageSessionWhereInputSchema.optional(),
+}).strict() ;
+
+export const ExchangeCredentialCreateArgsSchema: z.ZodType<Prisma.ExchangeCredentialCreateArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  data: z.union([ ExchangeCredentialCreateInputSchema,ExchangeCredentialUncheckedCreateInputSchema ]),
+}).strict() ;
+
+export const ExchangeCredentialUpsertArgsSchema: z.ZodType<Prisma.ExchangeCredentialUpsertArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereUniqueInputSchema,
+  create: z.union([ ExchangeCredentialCreateInputSchema,ExchangeCredentialUncheckedCreateInputSchema ]),
+  update: z.union([ ExchangeCredentialUpdateInputSchema,ExchangeCredentialUncheckedUpdateInputSchema ]),
+}).strict() ;
+
+export const ExchangeCredentialCreateManyArgsSchema: z.ZodType<Prisma.ExchangeCredentialCreateManyArgs> = z.object({
+  data: z.union([ ExchangeCredentialCreateManyInputSchema,ExchangeCredentialCreateManyInputSchema.array() ]),
+}).strict() ;
+
+export const ExchangeCredentialCreateManyAndReturnArgsSchema: z.ZodType<Prisma.ExchangeCredentialCreateManyAndReturnArgs> = z.object({
+  data: z.union([ ExchangeCredentialCreateManyInputSchema,ExchangeCredentialCreateManyInputSchema.array() ]),
+}).strict() ;
+
+export const ExchangeCredentialDeleteArgsSchema: z.ZodType<Prisma.ExchangeCredentialDeleteArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  where: ExchangeCredentialWhereUniqueInputSchema,
+}).strict() ;
+
+export const ExchangeCredentialUpdateArgsSchema: z.ZodType<Prisma.ExchangeCredentialUpdateArgs> = z.object({
+  select: ExchangeCredentialSelectSchema.optional(),
+  data: z.union([ ExchangeCredentialUpdateInputSchema,ExchangeCredentialUncheckedUpdateInputSchema ]),
+  where: ExchangeCredentialWhereUniqueInputSchema,
+}).strict() ;
+
+export const ExchangeCredentialUpdateManyArgsSchema: z.ZodType<Prisma.ExchangeCredentialUpdateManyArgs> = z.object({
+  data: z.union([ ExchangeCredentialUpdateManyMutationInputSchema,ExchangeCredentialUncheckedUpdateManyInputSchema ]),
+  where: ExchangeCredentialWhereInputSchema.optional(),
+}).strict() ;
+
+export const ExchangeCredentialDeleteManyArgsSchema: z.ZodType<Prisma.ExchangeCredentialDeleteManyArgs> = z.object({
+  where: ExchangeCredentialWhereInputSchema.optional(),
+}).strict() ;
+
+export const TradingPairCreateArgsSchema: z.ZodType<Prisma.TradingPairCreateArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  data: z.union([ TradingPairCreateInputSchema,TradingPairUncheckedCreateInputSchema ]),
+}).strict() ;
+
+export const TradingPairUpsertArgsSchema: z.ZodType<Prisma.TradingPairUpsertArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereUniqueInputSchema,
+  create: z.union([ TradingPairCreateInputSchema,TradingPairUncheckedCreateInputSchema ]),
+  update: z.union([ TradingPairUpdateInputSchema,TradingPairUncheckedUpdateInputSchema ]),
+}).strict() ;
+
+export const TradingPairCreateManyArgsSchema: z.ZodType<Prisma.TradingPairCreateManyArgs> = z.object({
+  data: z.union([ TradingPairCreateManyInputSchema,TradingPairCreateManyInputSchema.array() ]),
+}).strict() ;
+
+export const TradingPairCreateManyAndReturnArgsSchema: z.ZodType<Prisma.TradingPairCreateManyAndReturnArgs> = z.object({
+  data: z.union([ TradingPairCreateManyInputSchema,TradingPairCreateManyInputSchema.array() ]),
+}).strict() ;
+
+export const TradingPairDeleteArgsSchema: z.ZodType<Prisma.TradingPairDeleteArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  where: TradingPairWhereUniqueInputSchema,
+}).strict() ;
+
+export const TradingPairUpdateArgsSchema: z.ZodType<Prisma.TradingPairUpdateArgs> = z.object({
+  select: TradingPairSelectSchema.optional(),
+  data: z.union([ TradingPairUpdateInputSchema,TradingPairUncheckedUpdateInputSchema ]),
+  where: TradingPairWhereUniqueInputSchema,
+}).strict() ;
+
+export const TradingPairUpdateManyArgsSchema: z.ZodType<Prisma.TradingPairUpdateManyArgs> = z.object({
+  data: z.union([ TradingPairUpdateManyMutationInputSchema,TradingPairUncheckedUpdateManyInputSchema ]),
+  where: TradingPairWhereInputSchema.optional(),
+}).strict() ;
+
+export const TradingPairDeleteManyArgsSchema: z.ZodType<Prisma.TradingPairDeleteManyArgs> = z.object({
+  where: TradingPairWhereInputSchema.optional(),
 }).strict() ;

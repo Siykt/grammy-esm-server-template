@@ -36,3 +36,30 @@ model TelegramMessageSession {
   key   String @unique
   value String
 }
+
+/// 交易所 API 凭证（使用 SERVER_AUTH_PASSWORD 加密后存储）
+model ExchangeCredential {
+  id          String   @id @default(uuid())
+  exchangeId  String   @unique
+  apiKeyEnc   String
+  apiSecretEnc String
+  passphraseEnc String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// 监控的交易对（统一使用 base/quote 与原始 symbol 存储）
+model TradingPair {
+  id        String   @id @default(uuid())
+  symbol    String   @unique
+  base      String
+  quote     String
+  isLinear  Boolean  // true: U 本位；false: 币本位
+  enabled   Boolean  @default(true)
+  notes     String?
+  addedByTg String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
