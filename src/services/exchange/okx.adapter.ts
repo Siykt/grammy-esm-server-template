@@ -27,13 +27,15 @@ interface OkxMarkPriceResponse {
 }
 
 export class OkxAdapter extends ExchangeAdapter {
+  private baseUrl = 'https://www.okx.com/api/v5'
+
   constructor() {
     super('okx', 'OKX')
   }
 
   async fetchFundingRate(symbol: SymbolPair): Promise<FundingRate> {
     const { instId } = toOkxInstId(symbol)
-    const res = await fetch(`https://www.okx.com/api/v5/public/funding-rate?instId=${encodeURIComponent(instId)}`)
+    const res = await fetch(`${this.baseUrl}/public/funding-rate?instId=${encodeURIComponent(instId)}`)
     if (!res.ok)
       throw new Error(`OKX funding-rate error: ${res.status}`)
     const data = (await res.json()) as OkxFundingRateResponse
@@ -50,7 +52,7 @@ export class OkxAdapter extends ExchangeAdapter {
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {
     const { instId } = toOkxInstId(symbol)
-    const res = await fetch(`https://www.okx.com/api/v5/public/mark-price?instId=${encodeURIComponent(instId)}`)
+    const res = await fetch(`${this.baseUrl}/public/mark-price?instId=${encodeURIComponent(instId)}`)
     if (!res.ok)
       throw new Error(`OKX mark-price error: ${res.status}`)
     const data = (await res.json()) as OkxMarkPriceResponse
