@@ -29,6 +29,8 @@ export interface PlaceOrderParams {
   /** 限价单价格（市价单可省略） */
   price?: number
   timeInForce?: TimeInForce
+  /** 仅做 Maker（高级委托 post_only） */
+  postOnly?: boolean
   /** 仅减仓（合约交易） */
   reduceOnly?: boolean
   /** 客户端自定义订单 ID */

@@ -2,6 +2,7 @@ import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } f
 import { createHmac } from 'node:crypto'
 import axios, { AxiosHeaders } from 'axios'
 import { ExchangeAdapter } from '../exchange-adapter.js'
+import { ExchangePublicSubscribeAdapter, type PublicWsRoute } from '../public-subscribe.adapter.js'
 import { toOkxInstId } from '../utils.js'
 
 interface OkxFundingRateData {
@@ -26,6 +27,23 @@ interface OkxMarkPriceResponse {
   code: string
   msg: string
   data: OkxMarkPriceData[]
+}
+
+interface OkxOrderResult {
+  ordId?: string
+  clOrdId?: string
+  tag?: string
+  ts?: string
+  sCode?: string
+  sMsg?: string
+}
+
+interface OkxOrderResponse {
+  code: string
+  msg: string
+  data?: OkxOrderResult[]
+  inTime?: string
+  outTime?: string
 }
 
 export class OkxAdapter extends ExchangeAdapter {
@@ -125,11 +143,106 @@ export class OkxAdapter extends ExchangeAdapter {
   }
 
   async placeLimitOrder(params: PlaceOrderParams): Promise<Order> {
-    throw new Error('Not implemented: OKX placeLimitOrder')
+    const { symbol, side, type, amount, price, timeInForce, postOnly, reduceOnly, clientOrderId } = params
+    if (type !== 'limit')
+      throw new Error('OKX placeLimitOrder: params.type 必须为 limit')
+    if (price == null)
+      throw new Error('OKX placeLimitOrder: 限价单需要提供 price')
+
+    const { instId } = toOkxInstId(symbol)
+
+    const ordType: 'limit' | 'post_only' | 'fok' | 'ioc' = postOnly
+      ? 'post_only'
+      : (timeInForce === 'FOK')
+          ? 'fok'
+          : (timeInForce === 'IOC')
+              ? 'ioc'
+              : 'limit'
+
+    const body: Record<string, unknown> = {
+      instId,
+      tdMode: 'cross',
+      side,
+      ordType,
+      sz: String(amount),
+      px: String(price),
+    }
+    if (typeof reduceOnly === 'boolean')
+      body.reduceOnly = reduceOnly
+    if (clientOrderId)
+      body.clOrdId = clientOrderId
+
+    const res = await this.client.post<OkxOrderResponse>('/trade/order', body)
+    if (res.data.code !== '0')
+      throw new Error(`OKX 下单失败: ${res.data.msg || res.data.code}`)
+    const d = res.data.data?.[0]
+    if (!d)
+      throw new Error('OKX 下单返回数据异常: data 为空')
+    if (d.sCode && d.sCode !== '0')
+      throw new Error(`OKX 下单失败: ${d.sMsg || d.sCode}`)
+
+    const ts = d.ts ? Number(d.ts) : Date.now()
+    const order: Order = {
+      id: d.ordId || clientOrderId || '',
+      symbol,
+      side,
+      type: 'limit',
+      price: Number(price),
+      amount,
+      filled: 0,
+      remaining: amount,
+      status: 'new',
+      timestamp: ts,
+    }
+    return order
   }
 
-  async placeMarketOrder(_: PlaceOrderParams): Promise<Order> {
-    throw new Error('Not implemented: OKX placeMarketOrder')
+  async placeMarketOrder(params: PlaceOrderParams): Promise<Order> {
+    const { symbol, side, type, amount, timeInForce, reduceOnly, clientOrderId } = params
+    if (type !== 'market')
+      throw new Error('OKX placeMarketOrder: params.type 必须为 market')
+
+    const { instId } = toOkxInstId(symbol)
+
+    // 市价单：永续/交割支持 market；若指定 IOC，使用 optimal_limit_ioc
+    if (timeInForce === 'FOK')
+      throw new Error('OKX 市价单不支持 FOK')
+    const ordType: 'market' | 'optimal_limit_ioc' = (timeInForce === 'IOC') ? 'optimal_limit_ioc' : 'market'
+
+    const body: Record<string, unknown> = {
+      instId,
+      tdMode: 'cross',
+      side,
+      ordType,
+      sz: String(amount),
+    }
+    if (typeof reduceOnly === 'boolean')
+      body.reduceOnly = reduceOnly
+    if (clientOrderId)
+      body.clOrdId = clientOrderId
+
+    const res = await this.client.post<OkxOrderResponse>('/trade/order', body)
+    if (res.data.code !== '0')
+      throw new Error(`OKX 下单失败: ${res.data.msg || res.data.code}`)
+    const d = res.data.data?.[0]
+    if (!d)
+      throw new Error('OKX 下单返回数据异常: data 为空')
+    if (d.sCode && d.sCode !== '0')
+      throw new Error(`OKX 下单失败: ${d.sMsg || d.sCode}`)
+
+    const ts = d.ts ? Number(d.ts) : Date.now()
+    const order: Order = {
+      id: d.ordId || clientOrderId || '',
+      symbol,
+      side,
+      type: 'market',
+      amount,
+      filled: 0,
+      remaining: amount,
+      status: 'new',
+      timestamp: ts,
+    }
+    return order
   }
 
   async cancelOrder(): Promise<boolean> {
