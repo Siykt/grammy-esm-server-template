@@ -54,9 +54,36 @@ export class BinanceAdapter extends ExchangeAdapter {
     }
   }
 
-  async fetchFundingRateInterval(): Promise<number> {
-    // Binance 永续通常 8 小时
-    return 8 * 60 * 60 * 1000
+  async fetchFundingRateInterval(symbol?: SymbolPair): Promise<number> {
+    if (!symbol)
+      return 8 * 60 * 60 * 1000
+
+    try {
+      const info = toBinanceSymbol(symbol)
+      const base = `${info.baseUrl}/fapi/v1/fundingRate`.replace('/fapi/', info.inverse ? '/dapi/' : '/fapi/')
+      const res = await fetch(`${base}?symbol=${encodeURIComponent(info.symbol)}&limit=2`)
+      if (!res.ok)
+        throw new Error(`Binance fundingRate history error: ${res.status}`)
+      const arr = await res.json() as Array<{ fundingTime?: number }>
+      const times = (Array.isArray(arr) ? arr : [])
+        .map(i => Number(i.fundingTime))
+        .filter(t => Number.isFinite(t))
+        .sort((a, b) => a - b)
+      const lastTwo = times.slice(-2)
+      if (lastTwo.length === 2) {
+        const prevTs = lastTwo[0]
+        const currTs = lastTwo[1]
+        if (typeof prevTs === 'number' && typeof currTs === 'number') {
+          const dt = currTs - prevTs
+          if (dt > 0)
+            return dt
+        }
+      }
+      return 8 * 60 * 60 * 1000
+    }
+    catch {
+      return 8 * 60 * 60 * 1000
+    }
   }
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {

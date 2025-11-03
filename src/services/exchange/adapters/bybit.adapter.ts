@@ -65,9 +65,38 @@ export class BybitAdapter extends ExchangeAdapter {
     return { symbol, rate, timestamp }
   }
 
-  async fetchFundingRateInterval(): Promise<number> {
-    // Bybit 永续通常 8 小时
-    return 8 * 60 * 60 * 1000
+  async fetchFundingRateInterval(symbol?: SymbolPair): Promise<number> {
+    // 需指定合约以精确计算；未指定则兜底 8 小时
+    if (!symbol)
+      return 8 * 60 * 60 * 1000
+
+    try {
+      const { symbol: s, category } = toBybitSymbolAndCategory(symbol)
+      const url = `https://api.bybit.com/v5/market/funding/history?category=${category}&symbol=${encodeURIComponent(s)}&limit=5`
+      const res = await fetch(url)
+      if (!res.ok)
+        throw new Error(`Bybit funding history error: ${res.status}`)
+      const data = (await res.json()) as BybitFundingHistoryResponse
+      const times = (data.result?.list ?? [])
+        .map(i => Number(i.fundingRateTimestamp))
+        .filter(t => Number.isFinite(t))
+        .sort((a, b) => a - b)
+
+      const lastTwo = times.slice(-2)
+      if (lastTwo.length === 2) {
+        const prevTs = lastTwo[0]
+        const currTs = lastTwo[1]
+        if (typeof prevTs === 'number' && typeof currTs === 'number') {
+          const dt = currTs - prevTs
+          if (dt > 0)
+            return dt
+        }
+      }
+      return 8 * 60 * 60 * 1000
+    }
+    catch {
+      return 8 * 60 * 60 * 1000
+    }
   }
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {

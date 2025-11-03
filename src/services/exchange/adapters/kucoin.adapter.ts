@@ -53,8 +53,36 @@ export class KucoinAdapter extends ExchangeAdapter {
     throw new Error('KuCoin 不支持通过 ccxt 获取资金费率')
   }
 
-  async fetchFundingRateInterval(): Promise<number> {
-    return 8 * 60 * 60 * 1000
+  async fetchFundingRateInterval(symbol?: SymbolPair): Promise<number> {
+    if (!symbol)
+      return 8 * 60 * 60 * 1000
+
+    try {
+      const client = this.createClient()
+      const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+      if (client.has.fetchFundingRateHistory) {
+        const hist = await client.fetchFundingRateHistory(ccxtSymbol, undefined, 2)
+        const arr = Array.isArray(hist) ? hist : []
+        const times = arr
+          .map((i: { timestamp?: number }) => Number(i.timestamp))
+          .filter(t => Number.isFinite(t))
+          .sort((a, b) => a - b)
+        const lastTwo = times.slice(-2)
+        if (lastTwo.length === 2) {
+          const prevTs = lastTwo[0]
+          const currTs = lastTwo[1]
+          if (typeof prevTs === 'number' && typeof currTs === 'number') {
+            const dt = currTs - prevTs
+            if (dt > 0)
+              return dt
+          }
+        }
+      }
+      return 8 * 60 * 60 * 1000
+    }
+    catch {
+      return 8 * 60 * 60 * 1000
+    }
   }
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {
