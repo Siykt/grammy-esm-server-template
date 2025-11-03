@@ -38,5 +38,3 @@ export class MexcAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: MEXC fetchOrder')
   }
 }
-
-

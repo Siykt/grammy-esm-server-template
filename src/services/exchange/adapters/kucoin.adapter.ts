@@ -38,5 +38,3 @@ export class KucoinAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: KuCoin fetchOrder')
   }
 }
-
-

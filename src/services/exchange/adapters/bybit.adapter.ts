@@ -77,5 +77,3 @@ export class BybitAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: Bybit fetchOrder')
   }
 }
-
-

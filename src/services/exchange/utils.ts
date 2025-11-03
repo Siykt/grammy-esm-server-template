@@ -6,13 +6,13 @@ export interface ParsedSymbol {
 export function parseSymbol(input: string): ParsedSymbol {
   const s = input.replace(/\s+/g, '')
   if (s.includes('/')) {
-    const [base, quote] = s.split('/')
+    const [base, quote] = s.split('/') as [string, 'USDT' | 'USD']
     if ((quote as string) !== 'USDT' && quote !== 'USD')
       throw new Error(`Unsupported quote asset: ${quote}`)
     return { base: base.toUpperCase(), quote: quote as 'USDT' | 'USD' }
   }
   if (s.includes('-')) {
-    const [base, quote] = s.split('-')
+    const [base, quote] = s.split('-') as [string, 'USDT' | 'USD']
     if ((quote as string) !== 'USDT' && quote !== 'USD')
       throw new Error(`Unsupported quote asset: ${quote}`)
     return { base: base.toUpperCase(), quote: quote as 'USDT' | 'USD' }
@@ -30,7 +30,7 @@ export function isLinear(parsed: ParsedSymbol): boolean {
 
 // ---- 各所格式化 ----
 
-export function toBinanceSymbol(input: string): { symbol: string; inverse: boolean; baseUrl: string } {
+export function toBinanceSymbol(input: string): { symbol: string, inverse: boolean, baseUrl: string } {
   const p = parseSymbol(input)
   if (isLinear(p)) {
     return { symbol: `${p.base}USDT`, inverse: false, baseUrl: 'https://fapi.binance.com' }
@@ -45,11 +45,9 @@ export function toOkxInstId(input: string): { instId: string } {
   return { instId }
 }
 
-export function toBybitSymbolAndCategory(input: string): { symbol: string; category: 'linear' | 'inverse' } {
+export function toBybitSymbolAndCategory(input: string): { symbol: string, category: 'linear' | 'inverse' } {
   const p = parseSymbol(input)
   if (isLinear(p))
     return { symbol: `${p.base}USDT`, category: 'linear' }
   return { symbol: `${p.base}USD`, category: 'inverse' }
 }
-
-

@@ -79,5 +79,3 @@ export class OkxAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: OKX fetchOrder')
   }
 }
-
-

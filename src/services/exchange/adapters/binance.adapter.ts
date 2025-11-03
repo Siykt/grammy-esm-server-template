@@ -65,5 +65,3 @@ export class BinanceAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: Binance fetchOrder')
   }
 }
-
-
