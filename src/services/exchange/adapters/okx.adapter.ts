@@ -8,6 +8,7 @@ import { toOkxInstId } from '../utils.js'
 interface OkxFundingRateData {
   instId: string
   fundingRate: string
+  fundingTime?: string
   nextFundingTime?: string
 }
 
@@ -15,6 +16,22 @@ interface OkxFundingRateResponse {
   code: string
   msg: string
   data: OkxFundingRateData[]
+}
+
+interface OkxFundingRateHistoryData {
+  instId: string
+  fundingRate?: string
+  realizedRate?: string
+  fundingTime: string
+  instType?: string
+  formulaType?: string
+  method?: string
+}
+
+interface OkxFundingRateHistoryResponse {
+  code: string
+  msg: string
+  data: OkxFundingRateHistoryData[]
 }
 
 interface OkxMarkPriceData {
@@ -110,9 +127,53 @@ export class OkxAdapter extends ExchangeAdapter {
     return { symbol, rate, timestamp: Date.now(), nextFundingTime: nextFundingTime ? new Date(nextFundingTime).getTime() : undefined }
   }
 
-  async fetchFundingRateInterval(): Promise<number> {
-    // OKX 永续通常 8 小时
-    return 8 * 60 * 60 * 1000
+  async fetchFundingRateInterval(symbol?: SymbolPair): Promise<number> {
+    // 若未指定具体合约，返回默认 8 小时（OKX 常见值）
+    if (!symbol)
+      return 8 * 60 * 60 * 1000
+
+    try {
+      const { instId } = toOkxInstId(symbol)
+      // 取最近若干条历史记录，计算最近两次 fundingTime 的差值作为结算间隔
+      const res = await this.client.get<OkxFundingRateHistoryResponse>(`/public/funding-rate-history?instId=${encodeURIComponent(instId)}&limit=5`)
+      const arr = Array.isArray(res.data.data) ? res.data.data : []
+      const times = arr
+        .map(d => Number(d.fundingTime))
+        .filter(t => Number.isFinite(t))
+        .sort((a, b) => a - b)
+
+      // 选择最新的两个不同时间戳计算间隔
+      let interval = 0
+      for (let i = times.length - 1; i > 0; i--) {
+        const a = times[i]
+        const b = times[i - 1]
+        if (a != null && b != null) {
+          const dt = a - b
+          if (dt > 0) {
+            interval = dt
+            break
+          }
+        }
+      }
+
+      if (interval > 0)
+        return interval
+
+      // 回退：使用当前资金费率接口中的 fundingTime 与 nextFundingTime 推断
+      const cur = await this.client.get<OkxFundingRateResponse>(`/public/funding-rate?instId=${encodeURIComponent(instId)}`)
+      const item = cur.data.data?.[0]
+      const ft = item?.fundingTime ? Number(item.fundingTime) : undefined
+      const nft = item?.nextFundingTime ? Number(item.nextFundingTime) : undefined
+      if (ft && nft && nft > ft)
+        return nft - ft
+
+      // 最后兜底：8 小时
+      return 8 * 60 * 60 * 1000
+    }
+    catch {
+      // 失败兜底：8 小时
+      return 8 * 60 * 60 * 1000
+    }
   }
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {
