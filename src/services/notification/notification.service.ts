@@ -63,9 +63,16 @@ export class NotificationService {
       ? params.telegramIds
       : (level === NotificationLevel.INFO ? [] : ENV.ADMIN_TG_IDS)
 
+    // 如果选择了 TELEGRAM 渠道但没有可用接收人，则过滤掉该渠道并给出警告日志
+    if (channels.includes(NotificationChannel.TELEGRAM) && telegramIds.length === 0) {
+      logger.warn(`[NotificationService] TELEGRAM channel selected but no recipients (level=${level}). Filtering out TELEGRAM.`)
+    }
+
+    const effectiveChannels = channels.filter(ch => ch !== NotificationChannel.TELEGRAM || telegramIds.length > 0)
+
     const tasks: Array<Promise<void>> = []
 
-    for (const channel of channels) {
+    for (const channel of effectiveChannels) {
       if (channel === NotificationChannel.TELEGRAM) {
         for (const chatId of telegramIds) {
           tasks.push(this.sendOne({ level, title, message, channel, target: chatId, meta }))
