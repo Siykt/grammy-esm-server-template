@@ -1,6 +1,7 @@
 import type { Exchange, Market } from 'ccxt'
 import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
 import ccxt from 'ccxt'
+import { ENV } from '../../../constants/env.js'
 import { ExchangeAdapter } from '../exchange-adapter.js'
 import { isLinear, parseSymbol } from '../utils.js'
 
@@ -10,13 +11,17 @@ export class BitgetAdapter extends ExchangeAdapter {
   }
 
   private createClient(): Exchange {
-    const opts: { enableRateLimit: boolean, apiKey?: string, secret?: string, password?: string } = { enableRateLimit: true }
+    const opts: { enableRateLimit: boolean, apiKey?: string, secret?: string, password?: string, socksProxy?: string } = { enableRateLimit: true }
     if (this.credentials?.apiKey && this.credentials?.apiSecret) {
       opts.apiKey = this.credentials.apiKey
       opts.secret = this.credentials.apiSecret
       if (this.credentials.passphrase)
         opts.password = this.credentials.passphrase
     }
+
+    if (ENV.SOCKS_PROXY_HOST && ENV.SOCKS_PROXY_PORT)
+      opts.socksProxy = `socks5://${ENV.SOCKS_PROXY_HOST}:${ENV.SOCKS_PROXY_PORT}`
+
     const BitgetCtor = ccxt.bitget
     return new BitgetCtor(opts)
   }
