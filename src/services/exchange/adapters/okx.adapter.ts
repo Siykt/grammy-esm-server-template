@@ -30,13 +30,16 @@ interface OkxMarkPriceResponse {
 
 export class OkxAdapter extends ExchangeAdapter {
   private readonly client = axios.create({ baseURL: 'https://www.okx.com/api/v5' })
+  private readonly wsUrl = 'wss://ws.okx.com:8443/ws/v5/public'
+  private readonly publicWs: ExchangePublicSubscribeAdapter
+  private readonly frRoute: PublicWsRoute<{ instId: string, rate: number, nextFundingTime?: number }>
 
   constructor() {
     super('okx(欧易)', 'OKX')
     // 请求拦截器：自动为私有请求添加签名与必需请求头
     this.client.interceptors.request.use((config) => {
-      // 无凭证则跳过（公共接口）
-      if (!this.credentials?.apiKey || !config.url?.startsWith('/public'))
+      // 无凭证则跳过；公共接口（/public）也跳过签名
+      if (!this.credentials?.apiKey || config.url?.startsWith('/public'))
         return config
 
       // 计算 requestPath（必须包含 /api/v5 前缀 + 路径 + 查询串）
@@ -57,6 +60,27 @@ export class OkxAdapter extends ExchangeAdapter {
       config.headers = headers
       return config
     })
+
+    this.publicWs = new ExchangePublicSubscribeAdapter({ wsUrl: this.wsUrl })
+    this.frRoute = {
+      id: 'funding-rate',
+      buildSubscribe: instId => ({ id: `fr-${Date.now()}`, op: 'subscribe', args: [{ channel: 'funding-rate', instId }] }),
+      buildUnsubscribe: instId => ({ id: `fr-${Date.now()}`, op: 'unsubscribe', args: [{ channel: 'funding-rate', instId }] }),
+      parseMessage: (msg: unknown) => {
+        const m = msg as { event?: string, arg?: { channel?: string, instId?: string }, data?: unknown[] }
+        if (m.event)
+          return null
+        const arg = m.arg
+        const dataArr = Array.isArray(m.data) ? m.data : []
+        if (!arg || arg.channel !== 'funding-rate' || !arg.instId || dataArr.length === 0)
+          return null
+        const d = dataArr[0] as { fundingRate?: string, funding_rate?: string, fr?: string, nextFundingTime?: string | number, next_funding_time?: string | number, fundingTime?: string | number }
+        const rateStr = d.fundingRate ?? d.funding_rate ?? d.fr
+        const rate = rateStr ? Number(rateStr) : 0
+        const nextFundingTs = d.nextFundingTime ?? d.next_funding_time ?? d.fundingTime
+        return [{ topicKey: arg.instId, payload: { instId: arg.instId, rate, nextFundingTime: nextFundingTs ? Number(nextFundingTs) : undefined } }]
+      },
+    }
   }
 
   async fetchFundingRate(symbol: SymbolPair): Promise<FundingRate> {
@@ -90,7 +114,17 @@ export class OkxAdapter extends ExchangeAdapter {
     return createHmac('sha256', secret).update(prehash).digest('base64')
   }
 
-  async placeLimitOrder(_: PlaceOrderParams): Promise<Order> {
+  // ---- WebSocket：资金费率订阅 ----
+  /** 订阅资金费率推送，返回用于取消订阅的函数 */
+  subscribeFundingRate(symbol: SymbolPair, onUpdate: (data: FundingRate) => void): () => void {
+    const { instId } = toOkxInstId(symbol)
+    return this.publicWs.subscribeWith(this.frRoute, instId, (ev) => {
+      const data = ev as { instId: string, rate: number, nextFundingTime?: number }
+      onUpdate({ symbol, rate: data.rate, timestamp: Date.now(), nextFundingTime: data.nextFundingTime })
+    })
+  }
+
+  async placeLimitOrder(params: PlaceOrderParams): Promise<Order> {
     throw new Error('Not implemented: OKX placeLimitOrder')
   }
 
