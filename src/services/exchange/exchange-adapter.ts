@@ -1,3 +1,4 @@
+import type { Credential } from './credential.service.js'
 import type { ExchangeId, FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from './types.js'
 
 /**
@@ -6,10 +7,18 @@ import type { ExchangeId, FundingRate, Order, PlaceOrderParams, SymbolPair, Tick
 export abstract class ExchangeAdapter {
   readonly id: ExchangeId
   readonly name: string
+  protected credentials?: Omit<Credential, 'exchangeId'>
 
   constructor(id: ExchangeId, name: string) {
     this.id = id
     this.name = name
+  }
+
+  /**
+   * 设置交易所鉴权所需的凭证
+   */
+  setCredentials(params: Omit<Credential, 'exchangeId'>): void {
+    this.credentials = { ...params }
   }
 
   /** 获取资金费率 */
