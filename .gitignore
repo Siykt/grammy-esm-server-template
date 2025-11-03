@@ -39,4 +39,4 @@ lerna-debug.log*
 .env.test
 
 .eslintcache
-database.db
+database.db*
