@@ -26,11 +26,11 @@ export function computeADX(candles: KlineCandle[], period = 14): number[] {
   const minusDM: number[] = []
 
   for (let i = 1; i < candles.length; i++) {
-    const high = highs[i]
-    const low = lows[i]
-    const prevClose = closes[i - 1]
-    const prevHigh = highs[i - 1]
-    const prevLow = lows[i - 1]
+    const high = highs[i] ?? 0
+    const low = lows[i] ?? 0
+    const prevClose = closes[i - 1] ?? 0
+    const prevHigh = highs[i - 1] ?? 0
+    const prevLow = lows[i - 1] ?? 0
 
     const upMove = high - prevHigh
     const downMove = prevLow - low
@@ -50,10 +50,10 @@ export function computeADX(candles: KlineCandle[], period = 14): number[] {
     const out: number[] = []
     // 初始值：前 p 个的和
     let sum = 0
-    for (let i = 0; i < p; i++) sum += arr[i]
+    for (let i = 0; i < p; i++) sum += arr[i] ?? 0
     out[p - 1] = sum
     for (let i = p; i < arr.length; i++) {
-      sum = out[i - 1] - out[i - 1] / p + arr[i]
+      sum = (out[i - 1] ?? 0) - (out[i - 1] ?? 0) / p + (arr[i] ?? 0)
       out[i] = sum
     }
     return out
@@ -67,8 +67,8 @@ export function computeADX(candles: KlineCandle[], period = 14): number[] {
   const minusDI: number[] = []
   const dx: number[] = []
   for (let i = period - 1; i < trSmooth.length; i++) {
-    const pdi = 100 * (plusSmooth[i] / trSmooth[i])
-    const mdi = 100 * (minusSmooth[i] / trSmooth[i])
+    const pdi = 100 * ((plusSmooth[i] ?? 0) / (trSmooth[i] ?? 0))
+    const mdi = 100 * ((minusSmooth[i] ?? 0) / (trSmooth[i] ?? 0))
     plusDI.push(pdi)
     minusDI.push(mdi)
     const denom = pdi + mdi
@@ -81,10 +81,10 @@ export function computeADX(candles: KlineCandle[], period = 14): number[] {
     return []
   const adx: number[] = []
   let sum = 0
-  for (let i = 0; i < period; i++) sum += dx[i]
+  for (let i = 0; i < period; i++) sum += dx[i] ?? 0
   adx[period - 1] = sum / period
   for (let i = period; i < dx.length; i++) {
-    adx[i] = ((adx[i - 1] * (period - 1)) + dx[i]) / period
+    adx[i] = ((adx[i - 1] ?? 0) * (period - 1)) + (dx[i] ?? 0) / period
   }
   return adx
 }
@@ -95,12 +95,10 @@ export function detectHighFrequencyRanging(candles: KlineCandle[], opts: ADXOpti
   const lookback = opts.lookback ?? 5
   const adx = computeADX(candles, period)
   if (adx.length === 0)
-    return { isRanging: false, currentAdx: NaN, threshold, lastNAvgAdx: NaN }
+    return { isRanging: false, currentAdx: Number.NaN, threshold, lastNAvgAdx: Number.NaN }
   const last = adx[adx.length - 1]
   const recent = adx.slice(Math.max(0, adx.length - lookback))
   const avgRecent = recent.reduce((a, b) => a + b, 0) / recent.length
-  const isRanging = last < threshold && avgRecent < threshold
-  return { isRanging, currentAdx: last, threshold, lastNAvgAdx: avgRecent }
+  const isRanging = (last ?? 0) < threshold && (avgRecent ?? 0) < threshold
+  return { isRanging, currentAdx: last ?? 0, threshold, lastNAvgAdx: avgRecent ?? 0 }
 }
-
-
