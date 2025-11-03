@@ -3,29 +3,7 @@ import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } f
 import ccxt from 'ccxt'
 import { ENV } from '../../../constants/env.js'
 import { ExchangeAdapter } from '../exchange-adapter.js'
-import { isLinear, parseSymbol, toBybitSymbolAndCategory } from '../utils.js'
-
-interface BybitFundingHistoryItem {
-  fundingRate: string
-  fundingRateTimestamp: string
-}
-
-interface BybitFundingHistoryResponse {
-  retCode: number
-  retMsg: string
-  result?: { list?: BybitFundingHistoryItem[] }
-}
-
-interface BybitTickersItem {
-  markPrice?: string
-  indexPrice?: string
-}
-
-interface BybitTickersResponse {
-  retCode: number
-  retMsg: string
-  result?: { list?: BybitTickersItem[] }
-}
+import { isLinear, parseSymbol } from '../utils.js'
 
 export class BybitAdapter extends ExchangeAdapter {
   constructor() {
@@ -58,16 +36,15 @@ export class BybitAdapter extends ExchangeAdapter {
   }
 
   async fetchFundingRate(symbol: SymbolPair): Promise<FundingRate> {
-    const { symbol: s, category } = toBybitSymbolAndCategory(symbol)
-    const url = `https://api.bybit.com/v5/market/funding/history?category=${category}&symbol=${encodeURIComponent(s)}&limit=1`
-    const res = await fetch(url)
-    if (!res.ok)
-      throw new Error(`Bybit funding history error: ${res.status}`)
-    const data = (await res.json()) as BybitFundingHistoryResponse
-    const item = data.result?.list?.[0]
-    const rate = item?.fundingRate ? Number(item.fundingRate) : 0
-    const timestamp = item?.fundingRateTimestamp ? Number(item.fundingRateTimestamp) : Date.now()
-    return { symbol, rate, timestamp }
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    const fr = await client.fetchFundingRate(ccxtSymbol)
+    return {
+      symbol,
+      rate: Number(fr.fundingRate ?? 0),
+      timestamp: fr.timestamp ?? Date.now(),
+      nextFundingTime: fr.nextFundingTimestamp,
+    }
   }
 
   async fetchFundingRateInterval(symbol?: SymbolPair): Promise<number> {
@@ -76,26 +53,20 @@ export class BybitAdapter extends ExchangeAdapter {
       return 8 * 60 * 60 * 1000
 
     try {
-      const { symbol: s, category } = toBybitSymbolAndCategory(symbol)
-      const url = `https://api.bybit.com/v5/market/funding/history?category=${category}&symbol=${encodeURIComponent(s)}&limit=5`
-      const res = await fetch(url)
-      if (!res.ok)
-        throw new Error(`Bybit funding history error: ${res.status}`)
-      const data = (await res.json()) as BybitFundingHistoryResponse
-      const times = (data.result?.list ?? [])
-        .map(i => Number(i.fundingRateTimestamp))
+      const client = this.createClient()
+      const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+      const history = await client.fetchFundingRateHistory(ccxtSymbol, undefined, 2)
+      const times = (Array.isArray(history) ? history : [])
+        .map(i => Number(i.timestamp))
         .filter(t => Number.isFinite(t))
         .sort((a, b) => a - b)
 
       const lastTwo = times.slice(-2)
       if (lastTwo.length === 2) {
-        const prevTs = lastTwo[0]
-        const currTs = lastTwo[1]
-        if (typeof prevTs === 'number' && typeof currTs === 'number') {
-          const dt = currTs - prevTs
-          if (dt > 0)
-            return dt
-        }
+        const [prevTs, currTs] = lastTwo as [number, number]
+        const dt = currTs - prevTs
+        if (dt > 0)
+          return dt
       }
       return 8 * 60 * 60 * 1000
     }
@@ -105,16 +76,15 @@ export class BybitAdapter extends ExchangeAdapter {
   }
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {
-    const { symbol: s, category } = toBybitSymbolAndCategory(symbol)
-    const url = `https://api.bybit.com/v5/market/tickers?category=${category}&symbol=${encodeURIComponent(s)}`
-    const res = await fetch(url)
-    if (!res.ok)
-      throw new Error(`Bybit tickers error: ${res.status}`)
-    const data = (await res.json()) as BybitTickersResponse
-    const item = data.result?.list?.[0]
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    const t = await client.fetchTicker(ccxtSymbol)
+    const info: unknown = t.info
+    const mark = t.markPrice ?? (info && (info as { markPrice?: number | string }).markPrice) ?? t.last
+    const index = t.indexPrice ?? (info && (info as { indexPrice?: number | string }).indexPrice) ?? mark
     return {
-      markPrice: item?.markPrice ? Number(item.markPrice) : 0,
-      indexPrice: item?.indexPrice ? Number(item.indexPrice) : 0,
+      markPrice: Number(mark ?? 0),
+      indexPrice: Number(index ?? 0),
     }
   }
 

@@ -3,15 +3,7 @@ import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } f
 import ccxt from 'ccxt'
 import { ENV } from '../../../constants/env.js'
 import { ExchangeAdapter } from '../exchange-adapter.js'
-import { isLinear, parseSymbol, toBinanceSymbol } from '../utils.js'
-
-interface BinancePremiumIndexResponse {
-  symbol: string
-  markPrice: string
-  indexPrice: string
-  lastFundingRate?: string
-  nextFundingTime?: number
-}
+import { isLinear, parseSymbol } from '../utils.js'
 
 export class BinanceAdapter extends ExchangeAdapter {
   constructor() {
@@ -81,15 +73,14 @@ export class BinanceAdapter extends ExchangeAdapter {
   }
 
   async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {
-    const info = toBinanceSymbol(symbol)
-    const url = `${info.baseUrl}/fapi/v1/premiumIndex`.replace('/fapi/', info.inverse ? '/dapi/' : '/fapi/')
-    const res = await fetch(`${url}?symbol=${encodeURIComponent(info.symbol)}`)
-    if (!res.ok)
-      throw new Error(`Binance premiumIndex error: ${res.status}`)
-    const data = (await res.json()) as BinancePremiumIndexResponse
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    const t = await client.fetchTicker(ccxtSymbol)
+    const mark = t.markPrice ?? t.info?.markPrice ?? t.last
+    const index = t.indexPrice ?? t.info?.indexPrice ?? mark
     return {
-      markPrice: Number(data.markPrice),
-      indexPrice: Number(data.indexPrice),
+      markPrice: Number(mark ?? 0),
+      indexPrice: Number(index ?? 0),
     }
   }
 
