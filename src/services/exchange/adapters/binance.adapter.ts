@@ -1,6 +1,6 @@
-import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from './types.js'
-import { ExchangeAdapter } from './exchange-adapter.js'
-import { toBinanceSymbol } from './utils.js'
+import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
+import { ExchangeAdapter } from '../exchange-adapter.js'
+import { toBinanceSymbol } from '../utils.js'
 
 interface BinancePremiumIndexResponse {
   symbol: string
@@ -65,3 +65,5 @@ export class BinanceAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: Binance fetchOrder')
   }
 }
+
+

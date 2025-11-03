@@ -1,5 +1,5 @@
-import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from './types.js'
-import { ExchangeAdapter } from './exchange-adapter.js'
+import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
+import { ExchangeAdapter } from '../exchange-adapter.js'
 
 export class KucoinAdapter extends ExchangeAdapter {
   constructor() {
@@ -38,3 +38,5 @@ export class KucoinAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: KuCoin fetchOrder')
   }
 }
+
+

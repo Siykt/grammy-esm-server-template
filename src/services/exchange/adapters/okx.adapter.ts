@@ -1,6 +1,6 @@
-import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from './types.js'
-import { ExchangeAdapter } from './exchange-adapter.js'
-import { toOkxInstId } from './utils.js'
+import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
+import { ExchangeAdapter } from '../exchange-adapter.js'
+import { toOkxInstId } from '../utils.js'
 
 interface OkxFundingRateData {
   instId: string
@@ -79,3 +79,5 @@ export class OkxAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: OKX fetchOrder')
   }
 }
+
+

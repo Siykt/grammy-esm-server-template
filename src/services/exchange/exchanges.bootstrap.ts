@@ -1,10 +1,10 @@
 import type { ExchangeService } from './exchange.service.js'
-import { BinanceAdapter } from './binance.adapter.js'
-import { BitgetAdapter } from './bitget.adapter.js'
-import { BybitAdapter } from './bybit.adapter.js'
-import { KucoinAdapter } from './kucoin.adapter.js'
-import { MexcAdapter } from './mexc.adapter.js'
-import { OkxAdapter } from './okx.adapter.js'
+import { BinanceAdapter } from './adapters/binance.adapter.js'
+import { BitgetAdapter } from './adapters/bitget.adapter.js'
+import { BybitAdapter } from './adapters/bybit.adapter.js'
+import { KucoinAdapter } from './adapters/kucoin.adapter.js'
+import { MexcAdapter } from './adapters/mexc.adapter.js'
+import { OkxAdapter } from './adapters/okx.adapter.js'
 
 export function registerDefaultExchangeAdapters(exchangeService: ExchangeService): void {
   exchangeService.registerAdapter(new BinanceAdapter())

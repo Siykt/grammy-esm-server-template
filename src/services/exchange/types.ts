@@ -56,3 +56,14 @@ export interface TickerPrices {
   /** 指数价格（Index Price） */
   indexPrice: number
 }
+
+// 以 Binance K 线为基准的蜡烛数据结构（内部统一为 number）
+export interface KlineCandle {
+  openTime: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  closeTime: number
+}

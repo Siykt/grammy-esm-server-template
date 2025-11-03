@@ -1,5 +1,5 @@
-import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from './types.js'
-import { ExchangeAdapter } from './exchange-adapter.js'
+import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
+import { ExchangeAdapter } from '../exchange-adapter.js'
 
 export class BitgetAdapter extends ExchangeAdapter {
   constructor() {

@@ -1,6 +1,6 @@
-import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from './types.js'
-import { ExchangeAdapter } from './exchange-adapter.js'
-import { toBybitSymbolAndCategory } from './utils.js'
+import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
+import { ExchangeAdapter } from '../exchange-adapter.js'
+import { toBybitSymbolAndCategory } from '../utils.js'
 
 interface BybitFundingHistoryItem {
   fundingRate: string
@@ -77,3 +77,5 @@ export class BybitAdapter extends ExchangeAdapter {
     throw new Error('Not implemented: Bybit fetchOrder')
   }
 }
+
+
