@@ -43,18 +43,14 @@ export class BinanceAdapter extends ExchangeAdapter {
   }
 
   async fetchFundingRate(symbol: SymbolPair): Promise<FundingRate> {
-    const info = toBinanceSymbol(symbol)
-    const url = `${info.baseUrl}/fapi/v1/premiumIndex`.replace('/fapi/', info.inverse ? '/dapi/' : '/fapi/')
-    const res = await fetch(`${url}?symbol=${encodeURIComponent(info.symbol)}`)
-    if (!res.ok)
-      throw new Error(`Binance premiumIndex error: ${res.status}`)
-    const data = (await res.json()) as BinancePremiumIndexResponse
-    const rate = data.lastFundingRate ? Number(data.lastFundingRate) : 0
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    const fr = await client.fetchFundingRate(ccxtSymbol)
     return {
       symbol,
-      rate,
-      timestamp: Date.now(),
-      nextFundingTime: data.nextFundingTime,
+      rate: Number(fr.fundingRate ?? 0),
+      timestamp: fr.timestamp ?? Date.now(),
+      nextFundingTime: fr.nextFundingTimestamp,
     }
   }
 
@@ -63,25 +59,19 @@ export class BinanceAdapter extends ExchangeAdapter {
       return 8 * 60 * 60 * 1000
 
     try {
-      const info = toBinanceSymbol(symbol)
-      const base = `${info.baseUrl}/fapi/v1/fundingRate`.replace('/fapi/', info.inverse ? '/dapi/' : '/fapi/')
-      const res = await fetch(`${base}?symbol=${encodeURIComponent(info.symbol)}&limit=2`)
-      if (!res.ok)
-        throw new Error(`Binance fundingRate history error: ${res.status}`)
-      const arr = await res.json() as Array<{ fundingTime?: number }>
-      const times = (Array.isArray(arr) ? arr : [])
-        .map(i => Number(i.fundingTime))
+      const client = this.createClient()
+      const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+      const history = await client.fetchFundingRateHistory(ccxtSymbol, undefined, 2)
+      const times = (Array.isArray(history) ? history : [])
+        .map(i => Number(i.timestamp))
         .filter(t => Number.isFinite(t))
         .sort((a, b) => a - b)
       const lastTwo = times.slice(-2)
       if (lastTwo.length === 2) {
-        const prevTs = lastTwo[0]
-        const currTs = lastTwo[1]
-        if (typeof prevTs === 'number' && typeof currTs === 'number') {
-          const dt = currTs - prevTs
-          if (dt > 0)
-            return dt
-        }
+        const [prevTs, currTs] = lastTwo as [number, number]
+        const dt = currTs - prevTs
+        if (dt > 0)
+          return dt
       }
       return 8 * 60 * 60 * 1000
     }
