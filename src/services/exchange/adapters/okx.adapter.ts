@@ -84,7 +84,7 @@ export class OkxAdapter extends ExchangeAdapter {
   private readonly frRoute: PublicWsRoute<{ instId: string, rate: number, nextFundingTime?: number }>
 
   constructor() {
-    super('okx(欧易)', 'OKX')
+    super('okx', 'OKX')
     // 请求拦截器：自动为私有请求添加签名与必需请求头
     this.client.interceptors.request.use((config) => {
       // 无凭证则跳过；公共接口（/public）也跳过签名

@@ -1,3 +1,4 @@
+import { pMapPool } from '@atp-tools/lib'
 import { inject } from 'inversify'
 import { Service } from '../../common/decorators/service.js'
 import logger from '../../common/logger.js'
@@ -41,7 +42,7 @@ export class ExchangeMonitorService {
     for (const pair of pairs) {
       const symbol = pair.symbol
       const rates: Record<string, number> = {}
-      for (const ad of adapters) {
+      await pMapPool(adapters, async (ad) => {
         try {
           const fr = await ad.fetchFundingRate(symbol)
           rates[ad.id] = fr.rate
@@ -49,14 +50,17 @@ export class ExchangeMonitorService {
         catch (e) {
           logger.warn(`[Monitor] ${ad.id} fetchFundingRate ${symbol} failed: ${(e as Error).message}`)
         }
-      }
+      })
       const entries = Object.entries(rates)
       for (let i = 0; i < entries.length; i++) {
         for (let j = i + 1; j < entries.length; j++) {
           const [aId, aRate] = entries[i] as [string, number]
           const [bId, bRate] = entries[j] as [string, number]
           const spread = aRate - bRate
-          logger.info(`[Monitor] ${symbol} ${aId}<->${bId} spread=${spread}`)
+          // 大于 0.01% 的差价记录日志
+          if (Math.abs(spread) > 0.0001) {
+            logger.info(`[Monitor] ${symbol} ${aId}<->${bId} spread=${spread}`)
+          }
         }
       }
     }
