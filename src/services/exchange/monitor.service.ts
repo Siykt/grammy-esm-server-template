@@ -1,17 +1,23 @@
-import type { PairService } from './pair.service.js'
+import { inject } from 'inversify'
 import { Service } from '../../common/decorators/service.js'
 import logger from '../../common/logger.js'
 import { exchangeService } from '../index.js'
+import { PairService } from './pair.service.js'
 
 @Service()
 export class ExchangeMonitorService {
   private timer: TimeoutHandle | null = null
 
-  constructor(private readonly pairService: PairService) {}
+  constructor(
+    @inject(PairService)
+    private readonly pairService: PairService,
+  ) {}
 
   start(intervalMs = 60_000): void {
     if (this.timer)
       return
+
+    this.tick()
     this.timer = setInterval(() => {
       this.tick().catch(e => logger.error(`[Monitor] tick error: ${e.message}`))
     }, intervalMs)
@@ -27,8 +33,10 @@ export class ExchangeMonitorService {
 
   private async tick(): Promise<void> {
     const pairs = await this.pairService.list({ enabled: true })
-    if (!pairs.length)
+    if (!pairs.length) {
+      logger.info('[Monitor] no enabled pairs')
       return
+    }
     const adapters = exchangeService.listAdapters()
     for (const pair of pairs) {
       const symbol = pair.symbol
