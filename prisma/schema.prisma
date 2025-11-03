@@ -63,3 +63,20 @@ model TradingPair {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+/// 通知记录（每次发送一条记录）
+model Notification {
+  id        String               @id @default(uuid())
+  level     String
+  channel   String
+  title     String?
+  content   String
+  target    String?
+  meta      String?
+  status    String               @default("PENDING")
+  error     String?
+  sentAt    DateTime?
+
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
