@@ -63,6 +63,20 @@ interface OkxOrderResponse {
   outTime?: string
 }
 
+interface OkxOrderDetail {
+  ordId?: string
+  clOrdId?: string
+  state?: string
+  side?: 'buy' | 'sell'
+  ordType?: string
+  sz?: string
+  px?: string
+  accFillSz?: string
+  fillSz?: string
+  cTime?: string
+  uTime?: string
+}
+
 export class OkxAdapter extends ExchangeAdapter {
   private readonly client = axios.create({ baseURL: 'https://www.okx.com/api/v5' })
   private readonly wsUrl = 'wss://ws.okx.com:8443/ws/v5/public'
@@ -306,11 +320,59 @@ export class OkxAdapter extends ExchangeAdapter {
     return order
   }
 
-  async cancelOrder(): Promise<boolean> {
-    throw new Error('Not implemented: OKX cancelOrder')
+  async cancelOrder(symbol: SymbolPair, orderId: string): Promise<boolean> {
+    const { instId } = toOkxInstId(symbol)
+    const body: Record<string, unknown> = { instId, ordId: orderId }
+    const res = await this.client.post<OkxOrderResponse>('/trade/cancel-order', body)
+    if (res.data.code !== '0')
+      throw new Error(`OKX 撤单失败: ${res.data.msg || res.data.code}`)
+    const d = res.data.data?.[0]
+    if (!d)
+      throw new Error('OKX 撤单返回数据异常: data 为空')
+    if (d.sCode && d.sCode !== '0')
+      throw new Error(`OKX 撤单失败: ${d.sMsg || d.sCode}`)
+    return true
   }
 
-  async fetchOrder(): Promise<Order> {
-    throw new Error('Not implemented: OKX fetchOrder')
+  async fetchOrder(symbol: SymbolPair, orderId: string): Promise<Order> {
+    const { instId } = toOkxInstId(symbol)
+    const res = await this.client.get<{ code: string, msg: string, data?: OkxOrderDetail[] }>(`/trade/order?instId=${encodeURIComponent(instId)}&ordId=${encodeURIComponent(orderId)}`)
+    if (res.data.code !== '0')
+      throw new Error(`OKX 查询订单失败: ${res.data.msg || res.data.code}`)
+    const d = res.data.data?.[0]
+    if (!d)
+      throw new Error('OKX 查询订单返回数据异常: data 为空')
+
+    const statusMap: Record<string, 'new' | 'partially_filled' | 'filled' | 'canceled' | 'rejected'> = {
+      live: 'new',
+      partially_filled: 'partially_filled',
+      filled: 'filled',
+      canceled: 'canceled',
+      canceled_amend_failed: 'canceled',
+      rejected: 'rejected',
+    }
+
+    const amount = d.sz ? Number(d.sz) : 0
+    const filled = d.accFillSz ? Number(d.accFillSz) : (d.fillSz ? Number(d.fillSz) : 0)
+    const remaining = Math.max(0, amount - filled)
+    const side = (d.side === 'buy' ? 'buy' : 'sell') as Order['side']
+    const ordType = String(d.ordType || d.ordType || '').toLowerCase()
+    const type: Order['type'] = ordType.includes('market') ? 'market' : 'limit'
+    const status = statusMap[String(d.state)] ?? (filled > 0 ? 'partially_filled' : 'new')
+    const timestamp = d.uTime ? Number(d.uTime) : (d.cTime ? Number(d.cTime) : Date.now())
+
+    const order: Order = {
+      id: d.ordId || orderId,
+      symbol,
+      side,
+      type,
+      price: d.px ? Number(d.px) : undefined,
+      amount,
+      filled,
+      remaining,
+      status,
+      timestamp,
+    }
+    return order
   }
 }

@@ -50,6 +50,9 @@ importers:
       axios:
         specifier: ^1.13.1
         version: 1.13.1
+      ccxt:
+        specifier: ^4.4.91
+        version: 4.5.14
       dayjs:
         specifier: ^1.11.13
         version: 1.11.13
@@ -1108,6 +1111,10 @@ packages:
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
+
+  ccxt@4.5.14:
+    resolution: {integrity: sha512-aNd03zrsCX0Oru3ulTft6Uk1QSE87JcRPxddRId4puEZ9baTTYbUnKnkcxmFzagUoOvKlidnn7XCgzTKThk9pw==}
+    engines: {node: '>=15.0.0'}
 
   chalk@4.1.2:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
@@ -3480,6 +3487,13 @@ snapshots:
   caniuse-lite@1.0.30001688: {}
 
   ccount@2.0.1: {}
+
+  ccxt@4.5.14:
+    dependencies:
+      ws: 8.18.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   chalk@4.1.2:
     dependencies:

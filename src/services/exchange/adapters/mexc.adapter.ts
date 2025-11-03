@@ -1,40 +1,187 @@
+import type { Exchange, Market } from 'ccxt'
 import type { FundingRate, Order, PlaceOrderParams, SymbolPair, TickerPrices } from '../types.js'
+import ccxt from 'ccxt'
 import { ExchangeAdapter } from '../exchange-adapter.js'
+import { isLinear, parseSymbol } from '../utils.js'
 
 export class MexcAdapter extends ExchangeAdapter {
   constructor() {
     super('mexc', 'MEXC')
   }
 
-  async fetchFundingRate(_: SymbolPair): Promise<FundingRate> {
-    // TODO: 访问 MEXC 合约资金费率公共接口文档失败，待补充
-    // 参考：
-    // https://mexc.com/api-doc
-    throw new Error('Not implemented: MEXC fetchFundingRate (公共文档访问失败占位)')
+  private createClient(): Exchange {
+    const opts: { enableRateLimit: boolean, apiKey?: string, secret?: string } = { enableRateLimit: true }
+    if (this.credentials?.apiKey && this.credentials?.apiSecret) {
+      opts.apiKey = this.credentials.apiKey
+      opts.secret = this.credentials.apiSecret
+    }
+    const MexcCtor = ccxt.mexc
+    return new MexcCtor(opts)
+  }
+
+  private async resolveCcxtSymbol(client: Exchange, symbol: SymbolPair): Promise<string> {
+    const p = parseSymbol(symbol)
+    await client.loadMarkets()
+    const markets = Object.values(client.markets as Record<string, Market>)
+      .filter(m => m && m.swap && m.base === p.base && m.quote === p.quote)
+    if (markets.length === 0)
+      throw new Error(`MEXC 找不到合约市场: ${symbol}`)
+    const preferred = markets.find(m => m && (isLinear(p) ? m.linear : m.inverse)) || markets[0]
+    return preferred?.symbol ?? ''
+  }
+
+  async fetchFundingRate(symbol: SymbolPair): Promise<FundingRate> {
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    if (client.has.fetchFundingRate) {
+      const fr = await client.fetchFundingRate(ccxtSymbol)
+      const rate = fr.fundingRate != null ? Number(fr.fundingRate) : (fr.info?.fundingRate ? Number(fr.info.fundingRate) : 0)
+      const nextTs = fr.nextFundingTimestamp ?? fr.info?.nextFundingTime ?? undefined
+      return { symbol, rate, timestamp: Date.now(), nextFundingTime: nextTs ? Number(nextTs) : undefined }
+    }
+
+    if (client.has.fetchFundingRateHistory) {
+      const hist = await client.fetchFundingRateHistory(ccxtSymbol, undefined, 1)
+      const item = Array.isArray(hist) ? hist[0] : undefined
+      const rate = item?.fundingRate != null ? Number(item.fundingRate) : 0
+      const ts = item?.timestamp ?? Date.now()
+      return { symbol, rate, timestamp: Number(ts) }
+    }
+    throw new Error('MEXC 不支持通过 ccxt 获取资金费率')
   }
 
   async fetchFundingRateInterval(): Promise<number> {
     return 8 * 60 * 60 * 1000
   }
 
-  async fetchTickerPrices(_: SymbolPair): Promise<TickerPrices> {
-    // TODO: 访问 MEXC 标记/指数价格公共接口文档失败，待补充
-    throw new Error('Not implemented: MEXC fetchTickerPrices (公共文档访问失败占位)')
+  async fetchTickerPrices(symbol: SymbolPair): Promise<TickerPrices> {
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    const t = await client.fetchTicker(ccxtSymbol)
+    const mark = t.markPrice ?? t.info?.markPrice ?? t.last
+    const index = t.indexPrice ?? t.info?.indexPrice ?? mark
+    return {
+      markPrice: Number(mark ?? 0),
+      indexPrice: Number(index ?? 0),
+    }
   }
 
   async placeLimitOrder(_: PlaceOrderParams): Promise<Order> {
-    throw new Error('Not implemented: MEXC placeLimitOrder')
+    const params = _
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, params.symbol)
+    const res = await client.createOrder(ccxtSymbol, 'limit', params.side, params.amount, params.price, {
+      timeInForce: params.timeInForce,
+      postOnly: params.postOnly,
+      reduceOnly: params.reduceOnly,
+      clientOrderId: params.clientOrderId,
+    })
+    const filled = Number(res.filled ?? 0)
+    const amount = Number(res.amount ?? params.amount)
+    const remaining = Number(res.remaining ?? Math.max(0, amount - filled))
+    const status = ((): Order['status'] => {
+      const s = String(res.status || '').toLowerCase()
+      if (s === 'closed')
+        return 'filled'
+
+      if (s === 'canceled')
+        return 'canceled'
+
+      if (s === 'rejected')
+        return 'rejected'
+
+      return filled > 0 ? 'partially_filled' : 'new'
+    })()
+    return {
+      id: res.id || params.clientOrderId || '',
+      symbol: params.symbol,
+      side: params.side,
+      type: 'limit',
+      price: params.price,
+      amount,
+      filled,
+      remaining,
+      status,
+      timestamp: res.timestamp ?? Date.now(),
+    }
   }
 
   async placeMarketOrder(_: PlaceOrderParams): Promise<Order> {
-    throw new Error('Not implemented: MEXC placeMarketOrder')
+    const params = _
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, params.symbol)
+    const res = await client.createOrder(ccxtSymbol, 'market', params.side, params.amount, undefined, {
+      timeInForce: params.timeInForce,
+      reduceOnly: params.reduceOnly,
+      clientOrderId: params.clientOrderId,
+    })
+    const filled = Number(res.filled ?? 0)
+    const amount = Number(res.amount ?? params.amount)
+    const remaining = Number(res.remaining ?? Math.max(0, amount - filled))
+    const status = ((): Order['status'] => {
+      const s = String(res.status || '').toLowerCase()
+      if (s === 'closed')
+        return 'filled'
+
+      if (s === 'canceled')
+        return 'canceled'
+
+      if (s === 'rejected')
+        return 'rejected'
+
+      return filled > 0 ? 'partially_filled' : 'new'
+    })()
+    return {
+      id: res.id || params.clientOrderId || '',
+      symbol: params.symbol,
+      side: params.side,
+      type: 'market',
+      amount,
+      filled,
+      remaining,
+      status,
+      timestamp: res.timestamp ?? Date.now(),
+    }
   }
 
-  async cancelOrder(): Promise<boolean> {
-    throw new Error('Not implemented: MEXC cancelOrder')
+  async cancelOrder(symbol: SymbolPair, orderId: string): Promise<boolean> {
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    await client.cancelOrder(orderId, ccxtSymbol)
+    return true
   }
 
-  async fetchOrder(): Promise<Order> {
-    throw new Error('Not implemented: MEXC fetchOrder')
+  async fetchOrder(symbol: SymbolPair, orderId: string): Promise<Order> {
+    const client = this.createClient()
+    const ccxtSymbol = await this.resolveCcxtSymbol(client, symbol)
+    const o = await client.fetchOrder(orderId, ccxtSymbol)
+    const filled = Number(o.filled ?? 0)
+    const amount = Number(o.amount ?? 0)
+    const remaining = Number(o.remaining ?? Math.max(0, amount - filled))
+    const status = ((): Order['status'] => {
+      const s = String(o.status || '').toLowerCase()
+      if (s === 'closed')
+        return 'filled'
+
+      if (s === 'canceled')
+        return 'canceled'
+
+      if (s === 'rejected')
+        return 'rejected'
+
+      return filled > 0 ? 'partially_filled' : 'new'
+    })()
+    return {
+      id: o.id || orderId,
+      symbol,
+      side: (o.side as Order['side']) || 'buy',
+      type: (o.type as Order['type']) || 'limit',
+      price: o.price ?? undefined,
+      amount,
+      filled,
+      remaining,
+      status,
+      timestamp: o.timestamp ?? Date.now(),
+    }
   }
 }
