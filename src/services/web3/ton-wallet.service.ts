@@ -157,7 +157,7 @@ export class TonWalletService {
   private wallets = new Map<number, TonWallet>()
 
   constructor() {
-    TonCenterClient.setAuth(ENV.TON_CENTER_API_KEY, 'Authorization')
+    TonCenterClient.setAuth(ENV.TON_CENTER_API_KEY, 'X-API-KEY')
   }
 
   /**
