@@ -3,6 +3,7 @@ import type { HydrateApiFlavor, HydrateFlavor } from '@grammyjs/hydrate'
 import type { MenuOptions } from '@grammyjs/menu'
 import type { User } from '@prisma/client'
 import type { Api, Context, NextFunction, RawApi, SessionFlavor } from 'grammy'
+import type { TFunction } from 'i18next'
 import { autoRetry } from '@grammyjs/auto-retry'
 import { type ConversationFlavor, conversations, type StringWithCommandSuggestions } from '@grammyjs/conversations'
 import { hydrateFiles } from '@grammyjs/files'
@@ -11,6 +12,7 @@ import { Menu } from '@grammyjs/menu'
 import { run } from '@grammyjs/runner'
 import { PrismaAdapter } from '@grammyjs/storage-prisma'
 import { Bot, session } from 'grammy'
+import i18next from 'i18next'
 import { inject } from 'inversify'
 import _ from 'lodash'
 import { SocksProxyAgent } from 'socks-proxy-agent'
@@ -18,15 +20,20 @@ import { Service } from '../../common/decorators/service.js'
 import logger from '../../common/logger.js'
 import { prisma } from '../../common/prisma.js'
 import { ENV } from '../../constants/env.js'
+import i18n, { languages } from '../../locales/index.js'
 import { UserService } from '../user/user.service.js'
 
 export type TGBotUser = User
 
 export interface TGBotSessionData {
   user: TGBotUser
+  languageCode?: string
 }
 
-export type TGBotContext = FileFlavor<HydrateFlavor<ConversationFlavor<Context>>> & SessionFlavor<TGBotSessionData>
+export type TGBotContext = FileFlavor<HydrateFlavor<ConversationFlavor<Context>>> & SessionFlavor<TGBotSessionData> & {
+  i18n: typeof i18n
+  t: TFunction
+}
 
 export type TGBotApi = FileApiFlavor<HydrateApiFlavor<Api>>
 
@@ -45,6 +52,8 @@ export interface TGCommand {
   callback: (ctx: TGBotContext, next: NextFunction) => unknown
   register?: boolean
   privite?: boolean
+  i18nKey?: boolean
+  i18nData?: () => Record<string, string>
 }
 
 @Service()
@@ -149,8 +158,41 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
     logger.info('[TGBotService] Register session success')
   }
 
+  private registerI18n() {
+    this.use(async (ctx, next) => {
+      let canVisitSession = true
+      try {
+        this.updateSession(ctx, {})
+      }
+      catch {
+        canVisitSession = false
+      }
+
+      const i18n = i18next.cloneInstance({ initAsync: false, initImmediate: false })
+      const language = ctx.from?.language_code ?? 'en' // 默认英语
+      const languageCode = (language === 'zh-hans' || language === 'zh') ? 'zh' : language
+
+      if (!canVisitSession) {
+        ctx.i18n = i18n
+        ctx.t = i18n.t.bind(i18n)
+        return next()
+      }
+
+      // use the language code in session first
+      ctx.session.languageCode ??= languageCode
+      if (i18n.language !== ctx.session.languageCode) {
+        i18n.changeLanguage(ctx.session.languageCode)
+      }
+
+      ctx.i18n = i18n
+      ctx.t = i18n.t.bind(i18n)
+      await next()
+    })
+  }
+
   async run() {
     this.registerSession()
+    this.registerI18n()
     this.defineStartCommand()
     this.defineHelpCommand()
 
@@ -191,10 +233,16 @@ export class TGBotService extends Bot<TGBotContext, TGBotApi> {
   /**
    * setup commands
    */
-  setupCommands() {
-    return this.api.setMyCommands(Array.from(this.commands.values())
-      .filter(({ register }) => register !== false)
-      .map(({ command, description }) => ({ command, description })))
+  async setupCommands() {
+    const commands = Array.from(this.commands.values())
+    const normalCommands = commands.filter(({ register, description }) => register !== false && description)
+    const i18nCommands = normalCommands.filter(({ i18nKey }) => i18nKey === true)
+
+    await this.api.setMyCommands(normalCommands.map(({ command, description }) => ({ command, description })))
+    for (const language of languages) {
+      await i18n.changeLanguage(language.code)
+      await this.api.setMyCommands(i18nCommands.map(({ command, description, i18nKey, i18nData }) => ({ command, description: i18n.t(description, i18nKey ? i18nData?.() ?? {} : undefined) })), { language_code: language.code })
+    }
   }
 
   /**
