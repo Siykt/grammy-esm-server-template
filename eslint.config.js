@@ -11,6 +11,7 @@ export default antfu(
       'ts/no-use-before-define': 'off',
       'ts/no-explicit-any': 'error',
       'ts/no-non-null-assertion': 'error',
+      'no-console': 'off',
     },
   },
   {

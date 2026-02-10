@@ -32,5 +32,12 @@
   },
   "[prisma]": {
     "editor.defaultFormatter": "Prisma.prisma"
-  }
+  },
+  "i18n-ally.localesPaths": [
+    "src/locales"
+  ],
+  "cSpell.words": [
+    "polymarket"
+  ],
+  "prisma.pinToPrisma6": true
 } 

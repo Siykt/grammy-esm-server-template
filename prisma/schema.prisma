@@ -36,3 +36,163 @@ model TelegramMessageSession {
   key   String @unique
   value String
 }
+
+/// Trade record
+model Trade {
+  id              String   @id @default(uuid())
+  /// External order ID from Polymarket
+  orderId         String
+  /// Market condition ID
+  marketId        String
+  /// Token ID
+  tokenId         String
+  /// Trade side: BUY or SELL
+  side            String
+  /// Trade price (0-1)
+  price           Float
+  /// Trade size (shares)
+  size            Float
+  /// Fee amount
+  fee             Float    @default(0)
+  /// Trade status
+  status          String
+  /// Outcome name (Yes/No)
+  outcome         String?
+  /// Strategy that executed this trade
+  strategyName    String?
+  /// Transaction hash
+  transactionHash String?
+  /// When the trade was executed
+  executedAt      DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([marketId])
+  @@index([tokenId])
+  @@index([executedAt])
+}
+
+/// Position tracking
+model Position {
+  id            String   @id @default(uuid())
+  /// Market condition ID
+  marketId      String   @unique
+  /// Token ID
+  tokenId       String
+  /// Position side: BUY (long) or SELL (short)
+  side          String
+  /// Current position size
+  size          Float
+  /// Average entry price
+  avgEntryPrice Float
+  /// Current market price
+  currentPrice  Float
+  /// Unrealized PnL
+  unrealizedPnL Float    @default(0)
+  /// Realized PnL from closed portions
+  realizedPnL   Float    @default(0)
+  /// Stop-loss price (optional)
+  stopLoss      Float?
+  /// Take-profit price (optional)
+  takeProfit    Float?
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@index([tokenId])
+}
+
+/// Strategy configuration
+model StrategyConfig {
+  id        String   @id @default(uuid())
+  /// Strategy name (unique identifier)
+  name      String   @unique
+  /// Whether strategy is enabled
+  enabled   Boolean  @default(true)
+  /// Strategy parameters as JSON
+  params    String   @default("{}")
+  /// Last execution time
+  lastRunAt DateTime?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+/// Risk configuration
+model RiskConfig {
+  id                String   @id @default(uuid())
+  /// Configuration name
+  name              String   @unique @default("default")
+  /// Maximum position size per market (USDC)
+  maxPositionSize   Float    @default(100)
+  /// Maximum total exposure (USDC)
+  maxTotalExposure  Float    @default(1000)
+  /// Maximum drawdown percentage before stopping
+  maxDrawdown       Float    @default(10)
+  /// Default stop-loss percentage
+  stopLossPercent   Float    @default(5)
+  /// Default take-profit percentage
+  takeProfitPercent Float    @default(10)
+  /// Minimum profit threshold for arbitrage (USDC)
+  minArbitrageProfit Float   @default(0.01)
+  /// Kelly fraction multiplier (0.5 = half Kelly)
+  kellyFraction     Float    @default(0.5)
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+}
+
+/// Opportunity log
+model OpportunityLog {
+  id                    String   @id @default(uuid())
+  /// Opportunity type: cross-market, event-arbitrage, deviation
+  type                  String
+  /// Related market IDs (JSON array)
+  marketIds             String
+  /// Expected profit amount
+  expectedProfit        Float
+  /// Expected profit percentage
+  expectedProfitPercent Float
+  /// Confidence score (0-1)
+  confidence            Float
+  /// Status: pending, executing, executed, expired, skipped, failed
+  status                String
+  /// Strategy that found this opportunity
+  strategyName          String
+  /// Additional metadata as JSON
+  metadata              String   @default("{}")
+  /// Actual profit after execution (if executed)
+  actualProfit          Float?
+  /// Expiration time
+  expiresAt             DateTime
+  /// Execution time (if executed)
+  executedAt            DateTime?
+  createdAt             DateTime @default(now())
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Daily performance summary
+model DailyPerformance {
+  id                String   @id @default(uuid())
+  /// Date (YYYY-MM-DD format)
+  date              String   @unique
+  /// Total realized PnL for the day
+  realizedPnL       Float    @default(0)
+  /// Total trades executed
+  tradesCount       Int      @default(0)
+  /// Winning trades count
+  winCount          Int      @default(0)
+  /// Losing trades count
+  lossCount         Int      @default(0)
+  /// Total volume traded (USDC)
+  volume            Float    @default(0)
+  /// Total fees paid
+  fees              Float    @default(0)
+  /// Opportunities found
+  opportunitiesFound Int     @default(0)
+  /// Opportunities executed
+  opportunitiesExecuted Int  @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([date])
+}
