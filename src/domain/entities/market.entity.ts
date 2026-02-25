@@ -31,7 +31,9 @@ export class Market {
   static fromGamma(data: GammaMarket & { slug?: string, active?: boolean, closed?: boolean }): Market {
     const outcomeNames = JSON.parse(data.outcomes) as string[]
     const outcomePrices = JSON.parse(data.outcomePrices) as string[]
-    const tokenIds = data.clobTokenIds
+    const tokenIds = typeof data.clobTokenIds === 'string'
+      ? JSON.parse(data.clobTokenIds) as string[]
+      : data.clobTokenIds
 
     const outcomes: MarketOutcome[] = outcomeNames.map((name, index) => ({
       tokenId: tokenIds[index] ?? '',

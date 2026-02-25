@@ -105,8 +105,6 @@ function setupStrategies(services: AppServices): void {
         minEdge: 0.03, // 3% minimum edge
         // 黑名单模式：排除不需要的体育项目，留空则扫描所有
         excludedSports: [],
-        // 开启 debug 模式以打印详细的匹配日志
-        debug: true,
         confidenceThreshold: 0.6,
         maxPositionSize: 500,
         enabled: true,

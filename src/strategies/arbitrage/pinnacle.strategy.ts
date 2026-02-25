@@ -69,8 +69,6 @@ export interface PinnacleArbitrageConfig extends StrategyConfig {
   confidenceThreshold: number
   /** 最大仓位金额（美元） */
   maxPositionSize: number
-  /** 是否开启 debug 模式，打印详细的市场匹配日志 */
-  debug?: boolean
 }
 
 /**
@@ -211,17 +209,13 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       }
 
       if (sportsToScan.length === 0) {
-        if (this.config.debug) {
-          logger.debug('[PinnacleArbitrage] 无可映射到 Odds API 的 PM 联赛')
-        }
+        logger.debug('[PinnacleArbitrage] 无可映射到 Odds API 的 PM 联赛')
         return opportunities
       }
 
-      if (this.config.debug) {
-        logger.debug(
-          `[PinnacleArbitrage] 找到 ${sportsToScan.length} 个可扫描联赛: ${sportsToScan.map(s => s.pmSeries.sport).join(', ')}`,
-        )
-      }
+      logger.debug(
+        `[PinnacleArbitrage] 找到 ${sportsToScan.length} 个可扫描联赛: ${sportsToScan.map(s => s.pmSeries.sport).join(', ')}`,
+      )
 
       // 扫描每个联赛
       for (const { pmSeries, oddsSportKey } of sportsToScan) {
@@ -259,9 +253,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       const pmEvents = await this.pmClient.getSportsEvents(pmSeries.series, true)
 
       if (pmEvents.length === 0) {
-        if (this.config.debug) {
-          logger.debug(`[PinnacleArbitrage] [${pmSeries.sport}] 无活跃赛事`)
-        }
+        logger.debug(`[PinnacleArbitrage] [${pmSeries.sport}] 无活跃赛事`)
         return opportunities
       }
 
@@ -282,11 +274,9 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       // 获取 Odds API 赔率
       const oddsEvents = await this.getCachedPinnacleOdds(oddsSportKey)
 
-      if (this.config.debug) {
-        logger.debug(
-          `[PinnacleArbitrage] [${pmSeries.sport}] PM市场: ${pmMarkets.length}, 赔率事件: ${oddsEvents.length}`,
-        )
-      }
+      logger.debug(
+        `[PinnacleArbitrage] [${pmSeries.sport}] PM市场: ${pmMarkets.length}, 赔率事件: ${oddsEvents.length}`,
+      )
 
       if (oddsEvents.length === 0) {
         return opportunities
@@ -312,11 +302,9 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         }
       }
 
-      if (this.config.debug) {
-        logger.debug(
-          `[PinnacleArbitrage] [${pmSeries.sport}] 匹配到 ${matchedCount}/${oddsEvents.length} 个市场`,
-        )
-      }
+      logger.debug(
+        `[PinnacleArbitrage] [${pmSeries.sport}] 匹配到 ${matchedCount}/${oddsEvents.length} 个市场`,
+      )
     }
     catch (error) {
       logger.error(`[PinnacleArbitrage] 扫描联赛 ${pmSeries.sport} 失败`, error)
@@ -356,7 +344,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       const mapping = this.config.marketMappings.find(m => m.oddsEventId === event.id)
       if (mapping) {
         const market = pmMarkets.find(m => m.conditionId === mapping.pmConditionId)
-        if (market && this.config.debug) {
+        if (market) {
           logger.debug(
             `[PinnacleArbitrage] [手动映射] ${event.home_team} vs ${event.away_team} -> ${market.question.slice(0, 50)}`,
           )
@@ -385,8 +373,8 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       }
     }
 
-    // debug 模式下打印可能的匹配
-    if (this.config.debug && potentialMatches.length > 0) {
+    // 打印可能的匹配
+    if (potentialMatches.length > 0) {
       logger.debug(
         `[PinnacleArbitrage] [${sportKey || 'unknown'}] 事件: ${event.home_team} vs ${event.away_team}`,
       )
@@ -396,7 +384,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         )
       }
     }
-    else if (this.config.debug) {
+    else {
       // 打印未匹配的事件
       logger.debug(
         `[PinnacleArbitrage] [${sportKey || 'unknown'}] 未匹配: ${event.home_team} vs ${event.away_team}`,
