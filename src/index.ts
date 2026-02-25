@@ -107,7 +107,7 @@ function setupStrategies(services: AppServices): void {
         excludedSports: [],
         confidenceThreshold: 0.6,
         maxPositionSize: 500,
-        enabled: true,
+        enabled: false,
         maxConcurrentTrades: 3,
         maxDailyTrades: 20,
       },

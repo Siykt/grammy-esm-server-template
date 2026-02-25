@@ -139,6 +139,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
     // 兼容旧的 oddsApiKey 配置
     const apiKeys = config.oddsApiKeys || config.oddsApiKey || ''
     this.oddsClient = new OddsApiClient(apiKeys)
+    this.updateConfig(config)
   }
 
   /**
