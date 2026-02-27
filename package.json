@@ -40,6 +40,7 @@
     "grammy": "^1.37.0",
     "i18next": "^25.6.3",
     "inversify": "^7.6.1",
+    "ioredis": "^5.9.3",
     "lodash": "^4.17.21",
     "nanoid": "5.0.9",
     "node-cron": "^4.2.1",

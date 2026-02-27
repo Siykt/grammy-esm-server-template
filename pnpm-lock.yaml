@@ -77,6 +77,9 @@ importers:
       inversify:
         specifier: ^7.6.1
         version: 7.6.1(reflect-metadata@0.2.2)
+      ioredis:
+        specifier: ^5.9.3
+        version: 5.9.3
       lodash:
         specifier: ^4.17.21
         version: 4.17.21
@@ -2365,8 +2368,8 @@ packages:
   io-ts@1.10.4:
     resolution: {integrity: sha512-b23PteSnYXSONJ6JQXRAlvJhuw8KOtkqa87W4wDtvMrud/DTJd5X+NpOOI+O/zZwVq6v0VLAaJ+1EDViKEuN9g==}
 
-  ioredis@5.9.2:
-    resolution: {integrity: sha512-tAAg/72/VxOUW7RQSX1pIxJVucYKcjFjfvj60L57jrZpYCHC3XN0WCQ3sNYL4Gmvv+7GPvTAjc+KSdeNuE8oWQ==}
+  ioredis@5.9.3:
+    resolution: {integrity: sha512-VI5tMCdeoxZWU5vjHWsiE/Su76JGhBvWF1MJnV9ZtGltHk9BmD48oDq8Tj8haZ85aceXZMxLNDQZRVo5QKNgXA==}
     engines: {node: '>=12.22.0'}
 
   ip-address@10.0.1:
@@ -3660,7 +3663,7 @@ snapshots:
   '@atp-tools/crypto@0.12.8':
     dependencies:
       '@atp-tools/lib': 0.15.0
-      ioredis: 5.9.2
+      ioredis: 5.9.3
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -6148,7 +6151,7 @@ snapshots:
     dependencies:
       fp-ts: 1.19.3
 
-  ioredis@5.9.2:
+  ioredis@5.9.3:
     dependencies:
       '@ioredis/commands': 1.5.0
       cluster-key-slot: 1.1.2

@@ -10,6 +10,9 @@ if (!appHost.startsWith('http')) {
 config()
 
 export const ENV = {
+  // app
+  APP_NAME: process.env.APP_NAME ?? 'polymarket-arb',
+
   // logger
   LOGGER_DIR_PATH: process.env.LOGGER_DIR_PATH ?? './',
 
@@ -37,4 +40,9 @@ export const ENV = {
     .split(',')
     .map(key => key.trim())
     .filter(Boolean),
+
+  // Redis
+  REDIS_HOST: process.env.REDIS_HOST ?? '127.0.0.1',
+  REDIS_PORT: process.env.REDIS_PORT ?? '6379',
+  REDIS_PASSWORD: process.env.REDIS_PASSWORD ?? '',
 }
