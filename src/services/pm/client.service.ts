@@ -46,7 +46,7 @@ export interface GammaMarket {
   conditionId: string
   clobTokenIds: string[]
   outcomes: string
-  outcomePrices: string
+  outcomePrices?: string
   volume: string
   liquidity: string
   endDate: string
