@@ -17,6 +17,8 @@ function autoAddPrefixKey<F extends (...args: ExpectedAnyData[]) => ExpectedAnyD
 
 export const RedisKeys = {
   scanKeys: autoAddPrefixKey(scanKeys),
+  /** Pinnacle 扫描匹配缓存：sportKey -> Hash(oddsEventId -> conditionId)，空字符串表示无匹配，TTL 30min */
+  pinnacleScanMatch: (sportKey: string) => `${PREFIX}:pinnacle_scan_match:${sportKey}`,
 }
 
 export class RedisAsyncLock {

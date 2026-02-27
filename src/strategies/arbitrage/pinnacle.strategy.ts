@@ -4,6 +4,7 @@ import type { GammaSportsSeries, PMClientService } from '../../services/pm/clien
 import type { StrategyConfig, TradeResult } from '../base/strategy.interface.js'
 import { Side as ClobSide } from '@polymarket/clob-client'
 import logger from '../../common/logger.js'
+import { redis, RedisKeys } from '../../common/redis.js'
 import { Market } from '../../domain/entities/market.entity.js'
 import { Opportunity, OpportunityStatus, OpportunityType } from '../../domain/entities/opportunity.entity.js'
 import { Side } from '../../domain/value-objects/side.vo.js'
@@ -127,6 +128,8 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
   private readonly CACHE_TTL_MS = 300000
   /** 无赛事体育项目的缓存有效期（毫秒）- 30分钟 */
   private readonly EMPTY_CACHE_TTL_MS = 1800000
+  /** Redis 扫描匹配缓存有效期（秒）- 30分钟 */
+  private readonly SCAN_MATCH_CACHE_TTL_SEC = 1800
 
   constructor(
     name: string,
@@ -283,14 +286,50 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         return opportunities
       }
 
+      // 获取 Redis 缓存的匹配结果（30 分钟有效）
+      const matchCacheKey = RedisKeys.pinnacleScanMatch(oddsSportKey)
+      let cachedMatches = new Map<string, string>()
+      try {
+        const cached = await redis.hgetall(matchCacheKey)
+        if (cached && Object.keys(cached).length > 0) {
+          cachedMatches = new Map(Object.entries(cached))
+        }
+      }
+      catch (err) {
+        logger.warn('[PinnacleArbitrage] 读取匹配缓存失败，将重新匹配', err)
+      }
+
       // 匹配并查找机会
       let matchedCount = 0
+      let cacheHits = 0
+      let cacheMisses = 0
       for (const oddsEvent of oddsEvents) {
         const fairProbs = this.oddsClient.getPinnacleFairProbabilities(oddsEvent)
         if (!fairProbs)
           continue
 
-        const matchedMarket = this.findMatchingPmMarket(oddsEvent, pmMarkets, oddsSportKey)
+        // 优先使用 Redis 缓存的匹配结果
+        let matchedMarket: Market | null = null
+        const cachedConditionId = cachedMatches.get(oddsEvent.id)
+
+        if (cachedConditionId !== undefined) {
+          cacheHits++
+          if (cachedConditionId) {
+            matchedMarket = pmMarkets.find(m => m.conditionId === cachedConditionId) || null
+          }
+        }
+        else {
+          cacheMisses++
+          matchedMarket = this.findMatchingPmMarket(oddsEvent, pmMarkets, oddsSportKey)
+          try {
+            await redis.hset(matchCacheKey, oddsEvent.id, matchedMarket?.conditionId ?? '')
+            await redis.expire(matchCacheKey, this.SCAN_MATCH_CACHE_TTL_SEC)
+          }
+          catch (err) {
+            logger.warn('[PinnacleArbitrage] 写入匹配缓存失败', err)
+          }
+        }
+
         if (!matchedMarket)
           continue
 
@@ -304,7 +343,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       }
 
       logger.debug(
-        `[PinnacleArbitrage] [${pmSeries.sport}] 匹配到 ${matchedCount}/${oddsEvents.length} 个市场`,
+        `[PinnacleArbitrage] [${pmSeries.sport}] 匹配到 ${matchedCount}/${oddsEvents.length} 个市场 (缓存命中 ${cacheHits}, 未命中 ${cacheMisses})`,
       )
     }
     catch (error) {
@@ -698,13 +737,43 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
           continue
         }
 
+        // 使用与 scanPmSeries 相同的 Redis 匹配缓存
+        const matchCacheKey = RedisKeys.pinnacleScanMatch(oddsSportKey)
+        let cachedMatches = new Map<string, string>()
+        try {
+          const cached = await redis.hgetall(matchCacheKey)
+          if (cached && Object.keys(cached).length > 0) {
+            cachedMatches = new Map(Object.entries(cached))
+          }
+        }
+        catch {
+          // 静默忽略，将重新匹配
+        }
+
         // 匹配并查找机会
         for (const event of oddsEvents) {
           const fairProbs = this.oddsClient.getPinnacleFairProbabilities(event)
           if (!fairProbs)
             continue
 
-          const matchedMarket = this.findMatchingPmMarket(event, pmMarkets, oddsSportKey)
+          let matchedMarket: Market | null = null
+          const cachedConditionId = cachedMatches.get(event.id)
+          if (cachedConditionId !== undefined) {
+            if (cachedConditionId) {
+              matchedMarket = pmMarkets.find(m => m.conditionId === cachedConditionId) || null
+            }
+          }
+          else {
+            matchedMarket = this.findMatchingPmMarket(event, pmMarkets, oddsSportKey)
+            try {
+              await redis.hset(matchCacheKey, event.id, matchedMarket?.conditionId ?? '')
+              await redis.expire(matchCacheKey, this.SCAN_MATCH_CACHE_TTL_SEC)
+            }
+            catch {
+              // 静默忽略
+            }
+          }
+
           if (!matchedMarket)
             continue
 
