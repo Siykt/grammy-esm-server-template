@@ -336,7 +336,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         matchedCount++
 
         const valueOpp = this.findValueOpportunity(matchedMarket, fairProbs, oddsEvent)
-        if (valueOpp && valueOpp.edge >= this.config.minEdge) {
+        if (valueOpp && valueOpp.edge >= this.config.minEdge && valueOpp.pmPrice > 0) {
           const opportunity = this.createOpportunity(valueOpp)
           opportunities.push(opportunity)
         }
