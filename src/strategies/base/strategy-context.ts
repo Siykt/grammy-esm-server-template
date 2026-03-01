@@ -76,6 +76,7 @@ export class StrategyContext extends EventEmitter {
 
   /**
    * Start all enabled strategies
+   * 注意：不再启动内部 scan interval，执行由外部 scheduler 统一调度
    */
   async startAll(): Promise<void> {
     if (this.running) {
@@ -88,9 +89,6 @@ export class StrategyContext extends EventEmitter {
     // Start each enabled strategy
     const enabledStrategies = this.getEnabled()
     await Promise.all(enabledStrategies.map(s => s.start()))
-
-    // Start the scan interval
-    this.startScanInterval()
 
     logger.info(`[StrategyContext] Started ${enabledStrategies.length} strategies`)
     this.emit('started')

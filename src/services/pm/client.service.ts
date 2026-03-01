@@ -342,8 +342,33 @@ export class PMClientService {
   }
 
   // ============ Order Management (Authenticated) ============
+
+  /**
+   * 校验限价单参数
+   * @returns 错误信息，null 表示校验通过
+   */
+  private validateLimitOrderParams(params: CreateLimitOrderParams): string | null {
+    if (!params.tokenId) {
+      return 'tokenId 不能为空'
+    }
+    if (!Number.isFinite(params.price) || params.price < 0.001 || params.price > 0.999) {
+      return `无效价格: ${params.price}，有效范围: 0.001 - 0.999`
+    }
+    if (!Number.isFinite(params.size) || params.size <= 0) {
+      return `无效数量: ${params.size}，必须为正有限数`
+    }
+    return null
+  }
+
   async createLimitOrder(params: CreateLimitOrderParams): Promise<OrderResult> {
     this.ensureInitialized()
+
+    // 订单参数校验
+    const validationError = this.validateLimitOrderParams(params)
+    if (validationError) {
+      logger.warn(`[PMClientService] 订单校验失败: ${validationError}`)
+      return { success: false, errorMsg: validationError }
+    }
 
     const userOrder: UserOrder = {
       tokenID: params.tokenId,

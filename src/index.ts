@@ -107,7 +107,7 @@ function setupStrategies(services: AppServices): void {
         excludedSports: [],
         confidenceThreshold: 0.6,
         maxPositionSize: 500,
-        enabled: false,
+        enabled: true,
         maxConcurrentTrades: 3,
         maxDailyTrades: 20,
       },
@@ -126,10 +126,10 @@ function setupStrategies(services: AppServices): void {
 function setupScheduledJobs(services: AppServices): void {
   const { scheduler, strategyContext, notificationService } = services
 
-  // Opportunity Scan Job (every 10 seconds)
+  // Opportunity Scan Job (every 10 minutes)
   scheduler.addJob({
     name: 'opportunity-scan',
-    cronExpression: CronExpressions.EVERY_10_SECONDS,
+    cronExpression: CronExpressions.EVERY_10_MINUTES,
     enabled: true,
     handler: async () => {
       const results = await strategyContext.runAll()
@@ -251,6 +251,11 @@ async function bootstrap() {
     // Start strategies
     await services.strategyContext.startAll()
     logger.info('[Bootstrap] Strategies started')
+
+    // 启动后立即执行一次扫描
+    services.strategyContext.runAll().catch((err) => {
+      logger.error('[Bootstrap] 首次扫描失败', err)
+    })
 
     // Start Telegram bot
     tgBotService.run()

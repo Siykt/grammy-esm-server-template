@@ -338,7 +338,9 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         const valueOpp = this.findValueOpportunity(matchedMarket, fairProbs, oddsEvent)
         if (valueOpp && valueOpp.edge >= this.config.minEdge && valueOpp.pmPrice > 0) {
           const opportunity = this.createOpportunity(valueOpp)
-          opportunities.push(opportunity)
+          if (opportunity) {
+            opportunities.push(opportunity)
+          }
         }
       }
 
@@ -369,10 +371,17 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       }
     }
 
-    const oddsEvents = await this.oddsClient.getPinnacleOdds(sportKey)
-    this.cachedOdds.set(sportKey, { data: oddsEvents, timestamp: now })
-
-    return oddsEvents
+    try {
+      const oddsEvents = await this.oddsClient.getPinnacleOdds(sportKey)
+      this.cachedOdds.set(sportKey, { data: oddsEvents, timestamp: now })
+      return oddsEvents
+    }
+    catch {
+      // 404 等错误视为无赛事，缓存空结果避免重复请求
+      logger.debug(`[PinnacleArbitrage] 获取 ${sportKey} 赔率失败，缓存为空`)
+      this.cachedOdds.set(sportKey, { data: [], timestamp: now })
+      return []
+    }
   }
 
   /**
@@ -477,6 +486,8 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
     if (!prob1 || !prob2)
       return null
 
+    logger.debug(`[PinnacleArbitrage] [${event.home_team} vs ${event.away_team}] PM价格: ${yesPrice}, Pinnacle公平概率: ${prob1.fairProbability}, Pinnacle超额赔率: ${prob1.overround}`)
+
     // 检查 YES 机会（PM 相对于 Pinnacle 定价过低）
     const yesEdge = prob1.fairProbability - yesPrice
     if (yesEdge >= this.config.minEdge) {
@@ -515,34 +526,58 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
    * 超额赔率越低 = 对 Pinnacle 定价越有信心
    */
   private calculateConfidence(edge: number, overround: number): number {
-    // 基于边缘幅度的基础置信度（0-0.5）
-    const edgeConfidence = Math.min(edge * 5, 0.5)
+    // 基于边缘幅度的基础置信度（0-0.7）
+    const edgeConfidence = Math.min(edge * 5, 0.7)
 
     // Pinnacle 质量因子（超额赔率越低 = 置信度越高）
-    // Pinnacle 通常有 2-4% 的超额赔率
-    const qualityFactor = Math.max(0, (5 - overround) / 5) * 0.5
+    // Pinnacle 二路市场 2-4%，三路市场（足球）4-6%，上限设为 8%
+    const qualityFactor = Math.max(0, (8 - overround) / 8) * 0.3
 
     return Math.min(edgeConfidence + qualityFactor, 1)
   }
 
   /**
    * 从价值机会创建 Opportunity
+   * 返回 null 表示参数无效，应跳过
    */
-  private createOpportunity(valueOpp: PinnacleValueOpportunity): Opportunity {
+  private createOpportunity(valueOpp: PinnacleValueOpportunity): Opportunity | null {
+    // 校验价格范围（PM 限价单要求 0.001 - 0.999）
+    if (!Number.isFinite(valueOpp.pmPrice) || valueOpp.pmPrice < 0.01 || valueOpp.pmPrice > 0.99) {
+      logger.debug(`[PinnacleArbitrage] 跳过无效价格的机会: price=${valueOpp.pmPrice}`)
+      return null
+    }
+
     const tokenId = valueOpp.pmOutcome === 'Yes'
       ? valueOpp.pmMarket.yesOutcome?.tokenId
       : valueOpp.pmMarket.noOutcome?.tokenId
+
+    if (!tokenId) {
+      logger.debug(`[PinnacleArbitrage] 跳过无 tokenId 的机会: ${valueOpp.pmMarket.question.slice(0, 50)}`)
+      return null
+    }
 
     // 使用边缘和类凯利方法计算仓位大小
     const fullPosition = this.config.maxPositionSize * valueOpp.edge * 10
     const positionSize = Math.min(fullPosition, this.config.maxPositionSize)
 
+    // 计算份数（向下取整到 2 位小数，匹配 PM 精度要求）
+    const rawSize = positionSize / valueOpp.pmPrice
+    const size = Math.floor(rawSize * 100) / 100
+
+    if (!Number.isFinite(size) || size <= 0) {
+      logger.debug(`[PinnacleArbitrage] 跳过无效数量的机会: size=${rawSize}, price=${valueOpp.pmPrice}`)
+      return null
+    }
+
+    // 将价格四舍五入到 2 位小数（匹配常见 tick size 0.01）
+    const roundedPrice = Math.round(valueOpp.pmPrice * 100) / 100
+
     const leg: OpportunityLeg = {
       marketId: valueOpp.pmMarket.conditionId,
-      tokenId: tokenId || '',
+      tokenId,
       side: Side.BUY,
-      price: valueOpp.pmPrice,
-      size: Math.floor(positionSize / valueOpp.pmPrice),
+      price: roundedPrice,
+      size,
     }
 
     // 计算预期利润
@@ -588,6 +623,9 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
 
     // 检查置信度阈值
     if (opportunity.confidence < this.config.confidenceThreshold) {
+      logger.debug(
+        `[PinnacleArbitrage] 跳过低置信度机会: ${opportunity.confidence.toFixed(3)} < ${this.config.confidenceThreshold}`,
+      )
       return {
         success: false,
         trades: [],
@@ -604,17 +642,77 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
       }
     }
 
+    // 二次校验价格合法性
+    if (!Number.isFinite(leg.price) || leg.price < 0.01 || leg.price > 0.99) {
+      return {
+        success: false,
+        trades: [],
+        error: `无效价格: ${leg.price}`,
+      }
+    }
+
     try {
+      // 查询可用余额
+      const { balance: balanceStr } = await this.pmClient.getCollateralBalance()
+      const availableBalance = Number.parseFloat(balanceStr)
+
+      if (!Number.isFinite(availableBalance) || availableBalance < 1) {
+        return {
+          success: false,
+          trades: [],
+          error: `余额不足: $${balanceStr}`,
+        }
+      }
+
+      // 查询该 token 已有的挂单，避免重复下单
+      const existingOrders = await this.pmClient.getOpenOrdersByToken(leg.tokenId)
+      const existingExposure = existingOrders.reduce((sum, order) => {
+        const orderPrice = Number.parseFloat(order.price)
+        const orderRemaining = Number.parseFloat(order.original_size) - Number.parseFloat(order.size_matched)
+        return sum + (orderPrice * orderRemaining)
+      }, 0)
+
+      if (existingOrders.length > 0) {
+        logger.info(
+          `[PinnacleArbitrage] 该 token 已有 ${existingOrders.length} 个挂单，已占用 $${existingExposure.toFixed(2)}`,
+        )
+      }
+
+      // 计算可用预算 = min(余额, 最大仓位) - 已有挂单占用
+      const maxBudget = Math.min(availableBalance, this.config.maxPositionSize)
+      const availableBudget = maxBudget - existingExposure
+
+      if (availableBudget < 1) {
+        return {
+          success: false,
+          trades: [],
+          error: `预算不足: 可用 $${availableBudget.toFixed(2)} (余额 $${availableBalance.toFixed(2)}, 已挂单 $${existingExposure.toFixed(2)})`,
+        }
+      }
+
+      // 基于可用预算重新计算数量
+      const maxSizeByBudget = Math.floor((availableBudget / leg.price) * 100) / 100
+      const finalSize = Math.min(leg.size, maxSizeByBudget)
+
+      if (!Number.isFinite(finalSize) || finalSize <= 0) {
+        return {
+          success: false,
+          trades: [],
+          error: `计算后数量无效: ${finalSize}`,
+        }
+      }
+
       logger.info(
-        `[PinnacleArbitrage] 执行: 买入 ${leg.size} @ $${leg.price.toFixed(4)} `
-        + `(边缘: ${((opportunity.metadata?.edge as number) * 100).toFixed(2)}%)`,
+        `[PinnacleArbitrage] 执行: 买入 ${finalSize} @ $${leg.price.toFixed(4)} `
+        + `(边缘: ${((opportunity.metadata?.edge as number) * 100).toFixed(2)}%, `
+        + `预算: $${availableBudget.toFixed(2)})`,
       )
 
       // 下单
       const orderResult = await this.pmClient.createLimitOrder({
         tokenId: leg.tokenId,
         price: leg.price,
-        size: leg.size,
+        size: finalSize,
         side: ClobSide.BUY,
       })
 
@@ -632,7 +730,7 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         return {
           success: false,
           trades: [],
-          error: '订单下单失败',
+          error: `订单下单失败: ${orderResult.errorMsg || '未知错误'}`,
         }
       }
     }
