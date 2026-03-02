@@ -170,6 +170,60 @@ model OpportunityLog {
   @@index([createdAt])
 }
 
+/// WU 天气预报快照
+/// 每次抓取时记录预报值，同一日期可有多条（不同抓取时间），用于回溯预报准确率
+model WeatherForecast {
+  id        String   @id @default(uuid())
+  /// 站点 ICAO 代码（如 KLGA）
+  station   String
+  /// 预报目标日期 YYYY-MM-DD
+  date      String
+  /// 预报最高温 (°F)
+  highF     Int
+  /// 预报最低温 (°F)
+  lowF      Int
+  /// 抓取时距目标日期的天数（0=当天，1=提前1天...）
+  leadDays  Int
+  /// 叙述描述
+  narrative String   @default("")
+  /// 降水概率（白天 %）
+  precipChanceDay  Int?
+  /// 降水概率（夜间 %）
+  precipChanceNight Int?
+  /// 降水量 (英寸)
+  qpf       Float    @default(0)
+  /// 抓取时间
+  fetchedAt DateTime @default(now())
+
+  @@unique([station, date, fetchedAt])
+  @@index([station, date])
+  @@index([date])
+}
+
+/// WU 实际天气观测
+/// 每天一条，记录结算用的实际温度
+model WeatherObservation {
+  id        String   @id @default(uuid())
+  /// 站点 ICAO 代码
+  station   String
+  /// 观测日期 YYYY-MM-DD
+  date      String
+  /// 实际最高温 (°F)，当天数据未完整时可能为 null
+  highF     Int?
+  /// 实际最低温 (°F)，当天数据未完整时可能为 null
+  lowF      Int?
+  /// 降水量 (英寸)
+  precip    Float    @default(0)
+  /// 天气描述
+  weather   String   @default("")
+  /// 抓取时间
+  fetchedAt DateTime @default(now())
+
+  @@unique([station, date])
+  @@index([station, date])
+  @@index([date])
+}
+
 /// Daily performance summary
 model DailyPerformance {
   id                String   @id @default(uuid())

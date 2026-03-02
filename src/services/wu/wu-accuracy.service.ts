@@ -2,6 +2,8 @@
  * Weather Underground 预报准确率分析服务
  *
  * 通过对比 WU 预报数据与实际观测数据，计算预报准确率。
+ * 数据来源：SQLite 中的 WeatherForecast + WeatherObservation 表
+ *
  * 渐进式设计：
  *   V1: 简单区间频率法 - 统计预报偏差落入各区间的频率
  *   V2（预留）: 正态分布拟合 - 用偏差的均值和标准差建模
@@ -15,65 +17,108 @@ import type {
   TemperatureBucket,
 } from './wu.types.js'
 import logger from '../../common/logger.js'
+import { prisma } from '../../common/prisma.js'
 
 export class WUAccuracyAnalyzer {
-  /** 累积偏差记录（可持久化） */
+  /** 内存中的偏差记录（从 DB 加载 + 新采集） */
   private deviations: ForecastDeviation[] = []
 
   constructor(
     private wuClient: WUClientService,
+    private station: string = 'KLGA',
   ) {}
 
   // ============ 数据采集 ============
 
   /**
-   * 采集当前可用的偏差数据
-   * 对比 10 天预报中已过去的日期与 30 天历史的交集
+   * 从 DB 加载所有可计算偏差的记录
+   * 找 WeatherForecast 和 WeatherObservation 中日期重叠的数据
+   */
+  async loadFromDB(): Promise<ForecastDeviation[]> {
+    // 获取所有观测
+    const observations = await prisma.weatherObservation.findMany({
+      where: { station: this.station },
+      orderBy: { date: 'desc' },
+    })
+
+    if (observations.length === 0) {
+      logger.info('[WU准确率] DB 中无观测数据')
+      return []
+    }
+
+    const obsDates = observations.map(o => o.date)
+
+    // 对每个有观测的日期，找对应的预报记录
+    // 优先用 leadDays=1（提前1天的预报，最接近交易场景）
+    const forecasts = await prisma.weatherForecast.findMany({
+      where: {
+        station: this.station,
+        date: { in: obsDates },
+      },
+      orderBy: [{ date: 'asc' }, { leadDays: 'asc' }],
+    })
+
+    // 按 (date, leadDays) 分组，每组取最新一条
+    const forecastMap = new Map<string, { highF: number, lowF: number, leadDays: number }>()
+    for (const f of forecasts) {
+      const key = `${f.date}_${f.leadDays}`
+      // 保留每个 (date, leadDays) 组合的最新一条
+      forecastMap.set(key, { highF: f.highF, lowF: f.lowF, leadDays: f.leadDays })
+    }
+
+    // 构建偏差记录
+    const obsMap = new Map(observations.map(o => [o.date, o]))
+    const deviations: ForecastDeviation[] = []
+    const seenDates = new Set<string>()
+
+    for (const [key, forecast] of forecastMap) {
+      const date = key.split('_')[0] ?? ''
+      const obs = obsMap.get(date)
+      if (!obs)
+        continue
+
+      // 跳过观测数据不完整的记录
+      if (obs.highF == null)
+        continue
+
+      // 每个日期只保留最短 leadDays 的偏差（最准确的预报）
+      if (seenDates.has(date))
+        continue
+      seenDates.add(date)
+
+      deviations.push({
+        date,
+        forecastHigh: forecast.highF,
+        actualHigh: obs.highF,
+        deviationHigh: forecast.highF - obs.highF,
+        forecastLow: forecast.lowF,
+        actualLow: obs.lowF ?? 0,
+        deviationLow: forecast.lowF - (obs.lowF ?? 0),
+        leadDays: forecast.leadDays,
+      })
+    }
+
+    this.deviations = deviations
+    logger.info(`[WU准确率] 从 DB 加载 ${deviations.length} 条偏差记录`)
+    return deviations
+  }
+
+  /**
+   * 采集当前可用的偏差数据（抓取页面 + 写入 DB + 加载）
    */
   async collectDeviations(): Promise<ForecastDeviation[]> {
-    const [forecasts, history] = await Promise.all([
+    // 1. 先抓取最新数据（自动写入 DB）
+    await Promise.all([
       this.wuClient.getDailyForecasts(),
       this.wuClient.getHistoricalDaily(),
     ])
 
-    const historyMap = new Map(history.map(h => [h.date, h]))
-    const newDeviations: ForecastDeviation[] = []
-
-    for (const forecast of forecasts) {
-      const actual = historyMap.get(forecast.date)
-      if (!actual)
-        continue
-
-      // 只记录有实际数据的日期
-      const deviation: ForecastDeviation = {
-        date: forecast.date,
-        forecastHigh: forecast.highF,
-        actualHigh: actual.highF,
-        deviationHigh: forecast.highF - actual.highF,
-        forecastLow: forecast.lowF,
-        actualLow: actual.lowF,
-        deviationLow: forecast.lowF - actual.lowF,
-        leadDays: 0, // 从 SSR 无法精确知道预报是几天前的
-      }
-
-      newDeviations.push(deviation)
-    }
-
-    // 合并到累积记录（去重）
-    const existingDates = new Set(this.deviations.map(d => d.date))
-    for (const d of newDeviations) {
-      if (!existingDates.has(d.date)) {
-        this.deviations.push(d)
-        existingDates.add(d.date)
-      }
-    }
-
-    logger.info(`[WU准确率] 采集到 ${newDeviations.length} 条新偏差记录，累计 ${this.deviations.length} 条`)
-    return newDeviations
+    // 2. 从 DB 加载所有偏差
+    return this.loadFromDB()
   }
 
   /**
-   * 手动添加偏差记录（从外部数据源或持久化存储加载）
+   * 手动添加偏差记录（补充数据）
    */
   addDeviations(deviations: ForecastDeviation[]): void {
     const existingDates = new Set(this.deviations.map(d => d.date))
@@ -88,6 +133,54 @@ export class WUAccuracyAnalyzer {
   /** 获取所有偏差记录 */
   getDeviations(): ForecastDeviation[] {
     return [...this.deviations]
+  }
+
+  // ============ DB 查询 ============
+
+  /**
+   * 按 leadDays 分组获取准确率
+   * 用于分析不同提前天数的预报质量
+   */
+  async getAccuracyByLeadDays(): Promise<Map<number, ForecastAccuracy>> {
+    const forecasts = await prisma.weatherForecast.findMany({
+      where: { station: this.station },
+    })
+
+    const observations = await prisma.weatherObservation.findMany({
+      where: { station: this.station },
+    })
+
+    const obsMap = new Map(observations.map(o => [o.date, o]))
+    const byLeadDays = new Map<number, number[]>()
+
+    for (const f of forecasts) {
+      const obs = obsMap.get(f.date)
+      if (!obs || obs.highF == null)
+        continue
+
+      const deviation = f.highF - obs.highF
+      const existing = byLeadDays.get(f.leadDays) ?? []
+      existing.push(deviation)
+      byLeadDays.set(f.leadDays, existing)
+    }
+
+    const result = new Map<number, ForecastAccuracy>()
+    for (const [leadDays, deviations] of byLeadDays) {
+      result.set(leadDays, this.calculateAccuracy(deviations))
+    }
+
+    return result
+  }
+
+  /**
+   * 获取 DB 中的数据统计
+   */
+  async getDBStats(): Promise<{ forecasts: number, observations: number, deviations: number }> {
+    const [forecasts, observations] = await Promise.all([
+      prisma.weatherForecast.count({ where: { station: this.station } }),
+      prisma.weatherObservation.count({ where: { station: this.station } }),
+    ])
+    return { forecasts, observations, deviations: this.deviations.length }
   }
 
   // ============ 准确率统计 ============
@@ -338,9 +431,11 @@ export class WUAccuracyAnalyzer {
   /**
    * 摘要打印（调试用）
    */
-  printSummary(): void {
+  async printSummary(): Promise<void> {
     const acc = this.getHighTempAccuracy()
+    const stats = await this.getDBStats()
     console.log('\n=== WU 高温预报准确率 ===')
+    console.log(`DB 统计: ${stats.forecasts} 条预报, ${stats.observations} 条观测, ${stats.deviations} 条偏差`)
     console.log(`样本量: ${acc.sampleSize}`)
     console.log(`平均偏差: ${acc.meanDeviation.toFixed(1)}°F（正=偏高）`)
     console.log(`标准差: ${acc.stdDeviation.toFixed(1)}°F`)

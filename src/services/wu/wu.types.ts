@@ -123,10 +123,10 @@ export interface DayForecast {
 export interface DayHistory {
   /** 日期 YYYY-MM-DD */
   date: string
-  /** 实际最高温 (°F) */
-  highF: number
-  /** 实际最低温 (°F) */
-  lowF: number
+  /** 实际最高温 (°F)，null 表示数据缺失 */
+  highF: number | null
+  /** 实际最低温 (°F)，null 表示数据缺失 */
+  lowF: number | null
   /** 星期几 */
   dayOfWeek: string
   /** 降水量 */

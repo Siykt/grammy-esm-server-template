@@ -108,7 +108,7 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
   protected override async onStart(): Promise<void> {
     logger.info('[天气策略] 初始化 - 采集历史偏差数据')
     await this.analyzer.collectDeviations()
-    this.analyzer.printSummary()
+    await this.analyzer.printSummary()
   }
 
   // ============ 扫描机会 ============

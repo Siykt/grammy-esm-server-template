@@ -2,7 +2,7 @@
  * Weather Underground 数据采集服务
  *
  * 通过抓取 wunderground.com 页面的 SSR 数据（<script id="app-root-state">）
- * 获取天气预报和历史观测数据。
+ * 获取天气预报和历史观测数据，并持久化到 SQLite。
  *
  * 关键 API 端点（嵌入在页面 JSON 中）：
  * - /v3/wx/forecast/daily/10day - 10天逐日预报
@@ -23,6 +23,7 @@ import type {
 } from './wu.types.js'
 import axios from 'axios'
 import logger from '../../common/logger.js'
+import { prisma } from '../../common/prisma.js'
 
 /** 站点配置 */
 export interface WUStationConfig {
@@ -87,7 +88,7 @@ export class WUClientService {
   // ============ 公开方法 ============
 
   /**
-   * 获取 10 天逐日预报，解析为简化结构
+   * 获取 10 天逐日预报，解析为简化结构，并写入 DB
    */
   async getDailyForecasts(): Promise<DayForecast[]> {
     const state = await this.fetchForecastPage()
@@ -98,7 +99,9 @@ export class WUClientService {
       return []
     }
 
-    return this.parseDailyForecasts(raw)
+    const forecasts = this.parseDailyForecasts(raw)
+    await this.saveForecastsToDB(forecasts)
+    return forecasts
   }
 
   /**
@@ -111,7 +114,7 @@ export class WUClientService {
   }
 
   /**
-   * 获取 30 天历史每日摘要
+   * 获取 30 天历史每日摘要，并写入 DB
    */
   async getHistoricalDaily(): Promise<DayHistory[]> {
     const state = await this.fetchForecastPage()
@@ -122,7 +125,9 @@ export class WUClientService {
       return []
     }
 
-    return this.parseHistoricalDaily(raw)
+    const history = this.parseHistoricalDaily(raw)
+    await this.saveObservationsToDB(history)
+    return history
   }
 
   /**
@@ -157,10 +162,131 @@ export class WUClientService {
     return this.fetchForecastPage()
   }
 
-  /** 清除缓存 */
+  /** 清除内存缓存 */
   clearCache(): void {
     this.forecastCache = null
     this.historyCache.clear()
+  }
+
+  // ============ DB 持久化 ============
+
+  /**
+   * 将预报数据写入 WeatherForecast 表
+   * 每次抓取都记录一条快照（用于回溯不同提前天数的预报准确率）
+   */
+  private async saveForecastsToDB(forecasts: DayForecast[]): Promise<void> {
+    const now = new Date()
+    const todayStr = now.toISOString().slice(0, 10)
+
+    try {
+      await prisma.$transaction(
+        forecasts.map(f => prisma.weatherForecast.create({
+          data: {
+            station: this.station.icaoCode,
+            date: f.date,
+            highF: f.highF,
+            lowF: f.lowF,
+            leadDays: this.calcLeadDays(todayStr, f.date),
+            narrative: f.narrative,
+            precipChanceDay: f.precipChanceDay,
+            precipChanceNight: f.precipChanceNight,
+            qpf: f.qpf,
+            fetchedAt: now,
+          },
+        })),
+      )
+      logger.debug(`[WU] 写入 ${forecasts.length} 条预报到 DB`)
+    }
+    catch (error) {
+      // unique 约束冲突说明同一秒已写入过，忽略
+      logger.debug(`[WU] 预报写入 DB 跳过（可能已存在）: ${error}`)
+    }
+  }
+
+  /**
+   * 将历史观测写入 WeatherObservation 表
+   * 同一站点+日期只保留一条（upsert）
+   */
+  private async saveObservationsToDB(history: DayHistory[]): Promise<void> {
+    try {
+      for (const h of history) {
+        // 跳过 highF 缺失的记录（当天数据可能尚未完整）
+        if (h.highF == null)
+          continue
+
+        await prisma.weatherObservation.upsert({
+          where: {
+            station_date: { station: this.station.icaoCode, date: h.date },
+          },
+          create: {
+            station: this.station.icaoCode,
+            date: h.date,
+            highF: h.highF,
+            lowF: h.lowF,
+            precip: h.precip,
+            weather: h.weather,
+          },
+          update: {
+            highF: h.highF,
+            lowF: h.lowF,
+            precip: h.precip,
+            weather: h.weather,
+          },
+        })
+      }
+      const saved = history.filter(h => h.highF != null).length
+      logger.debug(`[WU] upsert ${saved} 条观测到 DB（跳过 ${history.length - saved} 条缺失数据）`)
+    }
+    catch (error) {
+      logger.error(`[WU] 观测写入 DB 失败: ${error}`)
+    }
+  }
+
+  /** 计算目标日期距今天的天数 */
+  private calcLeadDays(todayStr: string, targetDateStr: string): number {
+    const today = new Date(todayStr)
+    const target = new Date(targetDateStr)
+    return Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+  }
+
+  // ============ DB 查询（供外部使用） ============
+
+  /**
+   * 从 DB 查询指定日期的所有预报快照（不同提前天数）
+   */
+  async getForecastSnapshots(date: string, station?: string): Promise<{
+    leadDays: number
+    highF: number
+    lowF: number
+    fetchedAt: Date
+  }[]> {
+    return prisma.weatherForecast.findMany({
+      where: { station: station ?? this.station.icaoCode, date },
+      select: { leadDays: true, highF: true, lowF: true, fetchedAt: true },
+      orderBy: { fetchedAt: 'asc' },
+    })
+  }
+
+  /**
+   * 从 DB 查询指定日期的实际观测
+   */
+  async getObservation(date: string, station?: string) {
+    return prisma.weatherObservation.findUnique({
+      where: {
+        station_date: { station: station ?? this.station.icaoCode, date },
+      },
+    })
+  }
+
+  /**
+   * 从 DB 查询最近 N 天的观测记录
+   */
+  async getRecentObservations(days: number = 30, station?: string) {
+    return prisma.weatherObservation.findMany({
+      where: { station: station ?? this.station.icaoCode },
+      orderBy: { date: 'desc' },
+      take: days,
+    })
   }
 
   // ============ SSR 页面抓取 ============
@@ -299,8 +425,8 @@ export class WUClientService {
 
       history.push({
         date,
-        highF: raw.temperatureMax[i] ?? 0,
-        lowF: raw.temperatureMin[i] ?? 0,
+        highF: raw.temperatureMax[i] ?? null,
+        lowF: raw.temperatureMin[i] ?? null,
         dayOfWeek: raw.dayOfWeek[i] ?? '',
         precip: raw.precip24Hour[i] ?? 0,
         weather: raw.wxPhraseLongDay[i] ?? '',
