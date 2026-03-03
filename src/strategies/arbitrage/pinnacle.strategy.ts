@@ -466,55 +466,72 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
     fairProbs: FairProbability[],
     event: OddsEvent,
   ): PinnacleValueOpportunity | null {
-    // 从结果中获取 PM 价格
     const yesPrice = pmMarket.yesPrice.amount
     const noPrice = pmMarket.noPrice.amount
+    const is3Way = fairProbs.length === 3
 
-    // 尝试匹配结果
-    // 常见映射：主队 = Yes，客队 = No（对于胜负市场）
+    // 超额赔率硬截止
+    if (fairProbs[0] && fairProbs[0].overround > 6) {
+      logger.debug(`[PinnacleArbitrage] 跳过高超额赔率: ${event.home_team} vs ${event.away_team}, ${fairProbs[0].overround.toFixed(2)}%`)
+      return null
+    }
+
+    // 严格匹配主队概率，不回退
     const homeProb = fairProbs.find(p =>
       p.outcome.toLowerCase().includes(event.home_team.toLowerCase()),
     )
+    if (!homeProb) {
+      logger.warn(`[PinnacleArbitrage] 无法匹配主队: ${event.home_team}, 赔率结果: ${fairProbs.map(p => p.outcome).join(', ')}`)
+      return null
+    }
+
+    // 2-way 市场需要严格匹配客队
     const awayProb = fairProbs.find(p =>
       p.outcome.toLowerCase().includes(event.away_team.toLowerCase()),
     )
-
-    // 如果无法映射结果，尝试使用通用位置
-    const prob1 = homeProb || fairProbs[0]
-    const prob2 = awayProb || fairProbs[1]
-
-    if (!prob1 || !prob2)
+    if (!is3Way && !awayProb) {
+      logger.warn(`[PinnacleArbitrage] 无法匹配客队(2-way): ${event.away_team}, 赔率结果: ${fairProbs.map(p => p.outcome).join(', ')}`)
       return null
+    }
 
-    logger.debug(`[PinnacleArbitrage] [${event.home_team} vs ${event.away_team}] PM价格: ${yesPrice}, Pinnacle公平概率: ${prob1.fairProbability}, Pinnacle超额赔率: ${prob1.overround}`)
+    // NO 的公平概率：3-way 用 1-homeProb，2-way 用 awayProb
+    // 2-way 时 awayProb 已在上方守卫检查确认存在
+    const noFairProb = is3Way ? 1 - homeProb.fairProbability : (awayProb as FairProbability).fairProbability
+    const noOverround = is3Way ? homeProb.overround : (awayProb as FairProbability).overround
+
+    logger.debug(
+      `[PinnacleArbitrage] [${event.home_team} vs ${event.away_team}] ${is3Way ? '(3-way)' : '(2-way)'} `
+      + `YES=${yesPrice}/${homeProb.fairProbability.toFixed(4)} NO=${noPrice}/${noFairProb.toFixed(4)} `
+      + `超额=${homeProb.overround.toFixed(2)}%`,
+    )
 
     // 检查 YES 机会（PM 相对于 Pinnacle 定价过低）
-    const yesEdge = prob1.fairProbability - yesPrice
+    const yesEdge = homeProb.fairProbability - yesPrice
     if (yesEdge >= this.config.minEdge) {
       return {
         pmMarket,
         pmOutcome: 'Yes',
         pmPrice: yesPrice,
-        pinnacleFairProb: prob1.fairProbability,
+        pinnacleFairProb: homeProb.fairProbability,
         edge: yesEdge,
-        expectedValue: (prob1.fairProbability / yesPrice) - 1,
+        expectedValue: (homeProb.fairProbability / yesPrice) - 1,
         oddsEvent: event,
-        confidence: this.calculateConfidence(yesEdge, prob1.overround),
+        confidence: this.calculateConfidence(yesEdge, homeProb.overround),
       }
     }
 
     // 检查 NO 机会（PM 相对于 Pinnacle 定价过低）
-    const noEdge = prob2.fairProbability - noPrice
+    const noEdge = noFairProb - noPrice
     if (noEdge >= this.config.minEdge) {
       return {
         pmMarket,
         pmOutcome: 'No',
         pmPrice: noPrice,
-        pinnacleFairProb: prob2.fairProbability,
+        pinnacleFairProb: noFairProb,
         edge: noEdge,
-        expectedValue: (prob2.fairProbability / noPrice) - 1,
+        expectedValue: (noFairProb / noPrice) - 1,
         oddsEvent: event,
-        confidence: this.calculateConfidence(noEdge, prob2.overround),
+        confidence: this.calculateConfidence(noEdge, noOverround),
       }
     }
 
@@ -527,13 +544,50 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
    */
   private calculateConfidence(edge: number, overround: number): number {
     // 基于边缘幅度的基础置信度（0-0.7）
-    const edgeConfidence = Math.min(edge * 5, 0.7)
+    // edge 系数 12 使 minEdge=0.03 时 edgeConfidence=0.36，有合理基数
+    const edgeConfidence = Math.min(edge * 12, 0.7)
 
     // Pinnacle 质量因子（超额赔率越低 = 置信度越高）
-    // Pinnacle 二路市场 2-4%，三路市场（足球）4-6%，上限设为 8%
-    const qualityFactor = Math.max(0, (8 - overround) / 8) * 0.3
+    // Pinnacle 二路市场 2-4%，三路市场（足球）4-6%，>6% 已在 findValueOpportunity 中硬截止
+    const qualityFactor = Math.max(0, (6 - overround) / 6) * 0.3
 
     return Math.min(edgeConfidence + qualityFactor, 1)
+  }
+
+  /**
+   * 计算成交量加权平均价格 (VWAP)
+   * 遍历 ask 层级，累计 cost 和 filled 数量
+   * @param asks 按价格升序排列的卖单
+   * @param targetSize 目标买入数量
+   * @returns VWAP 价格，流动性不足时返回 null
+   */
+  private calculateVwap(asks: Array<{ price: string, size: string }>, targetSize: number): number | null {
+    if (asks.length === 0)
+      return null
+
+    let totalCost = 0
+    let totalFilled = 0
+
+    for (const ask of asks) {
+      const askPrice = Number.parseFloat(ask.price)
+      const askSize = Number.parseFloat(ask.size)
+      if (!Number.isFinite(askPrice) || !Number.isFinite(askSize))
+        continue
+
+      const fillQty = Math.min(askSize, targetSize - totalFilled)
+      totalCost += askPrice * fillQty
+      totalFilled += fillQty
+
+      if (totalFilled >= targetSize)
+        break
+    }
+
+    // 如果可填充量 < 目标的 80%，视为流动性不足
+    if (totalFilled < targetSize * 0.8) {
+      return null
+    }
+
+    return totalCost / totalFilled
   }
 
   /**
@@ -690,28 +744,87 @@ export class PinnacleArbitrageStrategy extends BaseStrategy {
         }
       }
 
-      // 基于可用预算重新计算数量
+      // 基于可用预算初步计算数量
       const maxSizeByBudget = Math.floor((availableBudget / leg.price) * 100) / 100
-      const finalSize = Math.min(leg.size, maxSizeByBudget)
+      const preliminarySize = Math.min(leg.size, maxSizeByBudget)
+
+      if (!Number.isFinite(preliminarySize) || preliminarySize <= 0) {
+        return {
+          success: false,
+          trades: [],
+          error: `计算后数量无效: ${preliminarySize}`,
+        }
+      }
+
+      // VWAP 验证：获取订单簿并计算深度加权价格
+      const orderBook = await this.pmClient.getOrderBook(leg.tokenId)
+      const vwap = this.calculateVwap(orderBook.asks, preliminarySize)
+
+      if (vwap === null) {
+        logger.info(
+          `[PinnacleArbitrage] 订单簿流动性不足，跳过: tokenId=${leg.tokenId}, 目标数量=${preliminarySize}`,
+        )
+        return {
+          success: false,
+          trades: [],
+          error: `订单簿流动性不足，无法满足目标数量 ${preliminarySize} 的 80%`,
+        }
+      }
+
+      // 使用 VWAP 重新验证边缘
+      const pinnacleFairProb = opportunity.metadata?.pinnacleFairProb as number
+      const adjustedEdge = pinnacleFairProb - vwap
+
+      logger.debug(
+        `[PinnacleArbitrage] VWAP=${vwap.toFixed(4)} (原始价格=${leg.price.toFixed(4)}), `
+        + `调整后边缘=${(adjustedEdge * 100).toFixed(2)}% (原始=${((opportunity.metadata?.edge as number) * 100).toFixed(2)}%)`,
+      )
+
+      if (adjustedEdge < this.config.minEdge) {
+        logger.info(
+          `[PinnacleArbitrage] VWAP 调整后边缘不足: ${(adjustedEdge * 100).toFixed(2)}% < ${(this.config.minEdge * 100).toFixed(2)}%`,
+        )
+        return {
+          success: false,
+          trades: [],
+          error: `VWAP 调整后边缘 ${(adjustedEdge * 100).toFixed(2)}% 低于阈值 ${(this.config.minEdge * 100).toFixed(2)}%`,
+        }
+      }
+
+      // 用 VWAP 四舍五入到 tick_size (0.01) 作为限价单价格
+      const vwapPrice = Math.round(vwap * 100) / 100
+
+      // 二次校验 VWAP 价格合法性
+      if (vwapPrice < 0.01 || vwapPrice > 0.99) {
+        return {
+          success: false,
+          trades: [],
+          error: `VWAP 价格超出范围: ${vwapPrice}`,
+        }
+      }
+
+      // 基于 VWAP 价格重新计算最终数量
+      const maxSizeByVwap = Math.floor((availableBudget / vwapPrice) * 100) / 100
+      const finalSize = Math.min(leg.size, maxSizeByVwap)
 
       if (!Number.isFinite(finalSize) || finalSize <= 0) {
         return {
           success: false,
           trades: [],
-          error: `计算后数量无效: ${finalSize}`,
+          error: `VWAP 价格下数量无效: ${finalSize}`,
         }
       }
 
       logger.info(
-        `[PinnacleArbitrage] 执行: 买入 ${finalSize} @ $${leg.price.toFixed(4)} `
-        + `(边缘: ${((opportunity.metadata?.edge as number) * 100).toFixed(2)}%, `
+        `[PinnacleArbitrage] 执行: 买入 ${finalSize} @ $${vwapPrice.toFixed(4)} (VWAP) `
+        + `(原始价格: $${leg.price.toFixed(4)}, 边缘: ${(adjustedEdge * 100).toFixed(2)}%, `
         + `预算: $${availableBudget.toFixed(2)})`,
       )
 
-      // 下单
+      // 下单（使用 VWAP 价格）
       const orderResult = await this.pmClient.createLimitOrder({
         tokenId: leg.tokenId,
-        price: leg.price,
+        price: vwapPrice,
         size: finalSize,
         side: ClobSide.BUY,
       })
