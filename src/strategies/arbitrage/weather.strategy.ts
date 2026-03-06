@@ -293,6 +293,7 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
 
   /**
    * 查找活跃的天气市场事件
+   * 使用 pagination 端点 + tag_slug=weather 过滤
    */
   private async findWeatherEvents(): Promise<GammaEvent[]> {
     if (!this.pmClient) {
@@ -300,15 +301,19 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
       return []
     }
 
-    const events = await this.pmClient.getEvents({
-      tag: 'Weather',
-      active: true,
+    logger.info('[天气策略] 查找活跃的天气市场事件')
+    const events = await this.pmClient.getEventsPaginated({
+      tag_slug: 'weather',
       closed: false,
-    } as Record<string, unknown>)
+    })
 
-    return events.filter(e =>
+    logger.info(`[天气策略] 找到 ${events.length} 个活跃的天气市场事件`)
+
+    const filteredEvents = events.filter(e =>
       e.slug.startsWith(this.config.eventSlugPrefix),
     )
+    logger.info(`[天气策略] 过滤后找到 ${filteredEvents.length} 个活跃的天气市场事件`)
+    return filteredEvents
   }
 
   /**
@@ -320,7 +325,7 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
     for (const market of event.markets) {
       try {
         const bucket = this.parseBucketFromQuestion(market.question)
-        const yesTokenId = market.clobTokenIds?.[0]
+        const yesTokenId = JSON.parse(market.clobTokenIds)[0]
         if (!yesTokenId)
           continue
 
@@ -334,8 +339,10 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
         if (this.pmClient) {
           try {
             const spread = await this.pmClient.getSpread(yesTokenId)
-            bestAsk = spread.ask
-            bestBid = spread.bid
+            if (spread.ask)
+              bestAsk = spread.ask
+            if (spread.bid)
+              bestBid = spread.bid
           }
           catch {
             // 使用 Gamma 价格作为后备

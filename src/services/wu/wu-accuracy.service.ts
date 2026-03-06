@@ -266,7 +266,7 @@ export class WUAccuracyAnalyzer {
   ): TemperatureBucket[] {
     const accuracy = this.getHighTempAccuracy()
 
-    if (accuracy.sampleSize < 5) {
+    if (accuracy.sampleSize < 10) {
       logger.warn(`[WU准确率] 样本量不足 (${accuracy.sampleSize})，使用正态近似`)
       return this.normalApproximation(forecastHigh, buckets, accuracy)
     }
@@ -316,8 +316,11 @@ export class WUAccuracyAnalyzer {
   ): TemperatureBucket[] {
     // 预报高温经偏差修正后的"真实"均值
     const mean = forecastHigh - accuracy.meanDeviation
-    // 使用较保守的标准差（样本量小时用更大值）
-    const std = accuracy.sampleSize > 0 ? accuracy.stdDeviation : 3.0 // 默认3°F标准差
+    // 样本量过少时（<10），用默认标准差 3.0°F，避免因数据不足导致分布过于集中
+    const minReliableSamples = 10
+    const std = accuracy.sampleSize >= minReliableSamples
+      ? Math.max(accuracy.stdDeviation, 1.5) // 即使有足够数据，也保证最小 1.5°F 的不确定性
+      : 3.0 // 默认 3°F 标准差（WU KLGA 历史经验值）
 
     return buckets.map((bucket) => {
       const prob = this.normalCDF(bucket, mean, std)
@@ -392,15 +395,15 @@ export class WUAccuracyAnalyzer {
    * 例如 "54°F or above" → { lowerBound: 54, upperBound: null }
    */
   static parseBucketFromLabel(label: string): TemperatureBucket {
-    // "X°F or below" / "<=XF"
-    const belowMatch = label.match(/(\d+)°?F?\s*(or below|or less)/i) ?? label.match(/<=\s*(\d+)/)
+    // "X°F or below" / "X°F or lower" / "<=XF"
+    const belowMatch = label.match(/(\d+)°?F?\s*(or below|or lower|or less)/i) ?? label.match(/<=\s*(\d+)/)
     if (belowMatch) {
       const bound = Number.parseInt(belowMatch[1] ?? '0')
       return { label, lowerBound: null, upperBound: bound, probability: 0 }
     }
 
-    // "X°F or above" / ">=XF"
-    const aboveMatch = label.match(/(\d+)°?F?\s*(or above|or more|\+)/i) ?? label.match(/>=\s*(\d+)/)
+    // "X°F or above" / "X°F or higher" / ">=XF"
+    const aboveMatch = label.match(/(\d+)°?F?\s*(or above|or higher|or more|\+)/i) ?? label.match(/>=\s*(\d+)/)
     if (aboveMatch) {
       const bound = Number.parseInt(aboveMatch[1] ?? '0')
       return { label, lowerBound: bound, upperBound: null, probability: 0 }
