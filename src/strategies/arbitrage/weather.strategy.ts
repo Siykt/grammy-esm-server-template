@@ -26,12 +26,14 @@ import { BaseStrategy } from '../base/strategy.abstract.js'
 
 /** 天气策略配置 */
 export interface WeatherStrategyConfig extends StrategyConfig {
-  /** 最小 EV 阈值（如 0.05 = 5%） */
+  /** 最小 edge 阈值（如 0.05 = 5%） */
   minEdge: number
-  /** 最大单次下注金额 */
+  /** 最大单次下注金额（美元） */
   maxBetSize: number
-  /** 置信度阈值（0-1） */
-  confidenceThreshold: number
+  /** 最低 YES 价格过滤（跳过价格低于此值的市场，避免低流动性虚假 EV） */
+  minYesPrice: number
+  /** 最大 YES 价格过滤（跳过价格高于此值的市场，性价比不高） */
+  maxYesPrice: number
   /** 目标日期的 Polymarket event slug 前缀 */
   eventSlugPrefix: string
   /** WU 站点代码 */
@@ -46,8 +48,8 @@ interface MarketOutcomeInfo {
   yesTokenId: string
   /** 市场问题（包含温度区间描述） */
   question: string
-  /** 当前 YES 价格 */
-  yesPrice: number
+  /** Gamma API YES 价格（参考价） */
+  gammaPrice: number
   /** 最佳 ask 价格 */
   bestAsk: number
   /** 最佳 bid 价格 */
@@ -64,7 +66,7 @@ interface WeatherOpportunityData {
   forecastHigh: number
   /** 模型计算概率 */
   modelProbability: number
-  /** 市场价格 */
+  /** 市场 bestAsk 价格 */
   marketPrice: number
   /** Edge = 模型概率 - 市场价格 */
   edge: number
@@ -80,7 +82,8 @@ const DEFAULT_CONFIG: WeatherStrategyConfig = {
   enabled: true,
   minEdge: 0.05,
   maxBetSize: 50,
-  confidenceThreshold: 0.6,
+  minYesPrice: 0.03, // 跳过 3¢ 以下的市场（低流动性/虚假高 EV）
+  maxYesPrice: 0.95, // 跳过 95¢ 以上的市场（性价比低）
   eventSlugPrefix: 'highest-temperature-in-nyc-on-',
   stationCode: 'KLGA',
 }
@@ -158,12 +161,27 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
           const market = markets[i] as MarketOutcomeInfo
           const prob = probabilities[i] as TemperatureBucket
 
-          const edge = prob.probability - market.yesPrice
-          const ev = market.yesPrice > 0
-            ? (prob.probability / market.yesPrice) - 1
+          // 跳过低价市场（无流动性，虚假高 EV）
+          if (market.bestAsk < this.config.minYesPrice) {
+            logger.debug(
+              `[天气策略] 跳过低价市场: ${market.bucket.label}`
+              + ` bestAsk=${(market.bestAsk * 100).toFixed(1)}¢ < ${(this.config.minYesPrice * 100).toFixed(0)}¢`,
+            )
+            continue
+          }
+
+          // 跳过高价市场（性价比低）
+          if (market.bestAsk > this.config.maxYesPrice) {
+            continue
+          }
+
+          // Edge 计算：模型概率 vs bestAsk（而非 Gamma 参考价）
+          const edge = prob.probability - market.bestAsk
+          const ev = market.bestAsk > 0
+            ? (prob.probability / market.bestAsk) - 1
             : 0
 
-          if (edge >= this.config.minEdge && prob.probability >= this.config.confidenceThreshold) {
+          if (edge >= this.config.minEdge) {
             const oppData: WeatherOpportunityData = {
               targetDate,
               forecastHigh: forecast.highF,
@@ -175,11 +193,18 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
               market,
             }
 
-            // 计算下注金额（简单的 edge 比例）
+            // 计算下注金额（类凯利：edge 越大下注越多）
             const betSize = Math.min(
               this.config.maxBetSize,
-              this.config.maxBetSize * edge * 5, // edge越大下注越多
+              this.config.maxBetSize * edge * 5,
             )
+
+            // 将价格四舍五入到 tick size（0.01）
+            const roundedPrice = Math.round(market.bestAsk * 100) / 100
+            const size = Math.floor((betSize / roundedPrice) * 100) / 100
+
+            if (size <= 0)
+              continue
 
             const opportunity = new Opportunity(
               `weather_${targetDate}_${market.bucket.label}`,
@@ -188,14 +213,14 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
                 marketId: market.conditionId,
                 tokenId: market.yesTokenId,
                 side: Side.BUY,
-                price: market.bestAsk,
-                size: betSize / market.bestAsk, // 转换为股数
+                price: roundedPrice,
+                size,
               }],
               betSize * ev, // 期望利润
               ev * 100, // 期望利润百分比
-              prob.probability, // 置信度
+              prob.probability, // 置信度 = 模型概率
               OpportunityStatus.PENDING,
-              new Date(Date.now() + 5 * 60 * 1000), // 5分钟过期
+              new Date(Date.now() + 5 * 60 * 1000), // 5 分钟过期
               new Date(),
               oppData as unknown as Record<string, unknown>,
             )
@@ -205,10 +230,11 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
             logger.info(
               `[天气策略] 发现机会: ${targetDate} ${market.bucket.label}`
               + ` | 预报=${forecast.highF}°F`
-              + ` | 模型概率=${(prob.probability * 100).toFixed(1)}%`
-              + ` | 市场价=${(market.yesPrice * 100).toFixed(1)}¢`
+              + ` | 模型=${(prob.probability * 100).toFixed(1)}%`
+              + ` | bestAsk=${(market.bestAsk * 100).toFixed(1)}¢`
               + ` | Edge=${(edge * 100).toFixed(1)}%`
-              + ` | EV=${(ev * 100).toFixed(1)}%`,
+              + ` | EV=${(ev * 100).toFixed(1)}%`
+              + ` | 下注=$${betSize.toFixed(2)}`,
             )
           }
         }
@@ -229,6 +255,10 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
       return { success: false, trades: [], error: '未配置 PM 客户端' }
     }
 
+    if (opportunity.isExpired) {
+      return { success: false, trades: [], error: '机会已过期' }
+    }
+
     const leg = opportunity.legs[0]
     if (!leg) {
       return { success: false, trades: [], error: '无交易腿' }
@@ -239,27 +269,124 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
     try {
       opportunity.markExecuting()
 
+      // 1. 查询可用余额
+      const { balance: balanceStr } = await this.pmClient.getCollateralBalance()
+      const availableBalance = Number.parseFloat(balanceStr)
+
+      if (!Number.isFinite(availableBalance) || availableBalance < 1) {
+        opportunity.markFailed()
+        return { success: false, trades: [], error: `余额不足: $${balanceStr}` }
+      }
+
+      // 2. 检查该 token 已有的挂单，避免重复
+      const existingOrders = await this.pmClient.getOpenOrdersByToken(leg.tokenId)
+      const existingExposure = existingOrders.reduce((sum, order) => {
+        const orderPrice = Number.parseFloat(order.price)
+        const orderRemaining = Number.parseFloat(order.original_size) - Number.parseFloat(order.size_matched)
+        return sum + (orderPrice * orderRemaining)
+      }, 0)
+
+      if (existingOrders.length > 0) {
+        logger.info(
+          `[天气策略] 该 token 已有 ${existingOrders.length} 个挂单，已占用 $${existingExposure.toFixed(2)}`,
+        )
+      }
+
+      // 3. 计算可用预算
+      const maxBudget = Math.min(availableBalance, this.config.maxBetSize)
+      const availableBudget = maxBudget - existingExposure
+
+      if (availableBudget < 1) {
+        opportunity.markFailed()
+        return {
+          success: false,
+          trades: [],
+          error: `预算不足: 可用 $${availableBudget.toFixed(2)} (余额 $${availableBalance.toFixed(2)}, 已挂单 $${existingExposure.toFixed(2)})`,
+        }
+      }
+
+      // 4. VWAP 验证：获取订单簿并计算深度加权价格
+      const orderBook = await this.pmClient.getOrderBook(leg.tokenId)
+      const preliminarySize = Math.min(leg.size, Math.floor((availableBudget / leg.price) * 100) / 100)
+
+      const vwap = this.calculateVwap(orderBook.asks, preliminarySize)
+
+      if (vwap === null) {
+        opportunity.markFailed()
+        logger.info(
+          `[天气策略] 订单簿流动性不足: ${metadata.bucket.label}, 目标数量=${preliminarySize}`,
+        )
+        return {
+          success: false,
+          trades: [],
+          error: `订单簿流动性不足，无法满足目标数量 ${preliminarySize} 的 80%`,
+        }
+      }
+
+      // 5. 用 VWAP 重新验证 edge
+      const adjustedEdge = metadata.modelProbability - vwap
+
+      logger.debug(
+        `[天气策略] VWAP=${vwap.toFixed(4)} (scan价格=${leg.price.toFixed(4)})`
+        + ` | 调整后Edge=${(adjustedEdge * 100).toFixed(2)}%`
+        + ` (原始=${(metadata.edge * 100).toFixed(2)}%)`,
+      )
+
+      if (adjustedEdge < this.config.minEdge) {
+        opportunity.markFailed()
+        logger.info(
+          `[天气策略] VWAP 调整后 edge 不足: ${(adjustedEdge * 100).toFixed(2)}% < ${(this.config.minEdge * 100).toFixed(2)}%`,
+        )
+        return {
+          success: false,
+          trades: [],
+          error: `VWAP 调整后 edge ${(adjustedEdge * 100).toFixed(2)}% 低于阈值`,
+        }
+      }
+
+      // 6. 用 VWAP 价格下单（四舍五入到 tick size 0.01）
+      const vwapPrice = Math.round(vwap * 100) / 100
+
+      if (vwapPrice < 0.01 || vwapPrice > 0.99) {
+        opportunity.markFailed()
+        return { success: false, trades: [], error: `VWAP 价格超出范围: ${vwapPrice}` }
+      }
+
+      // 基于 VWAP 价格重新计算最终数量
+      const maxSizeByVwap = Math.floor((availableBudget / vwapPrice) * 100) / 100
+      const finalSize = Math.min(leg.size, maxSizeByVwap)
+
+      if (!Number.isFinite(finalSize) || finalSize <= 0) {
+        opportunity.markFailed()
+        return { success: false, trades: [], error: `VWAP 价格下数量无效: ${finalSize}` }
+      }
+
       logger.info(
         `[天气策略] 执行: 买入 ${metadata.bucket.label}`
-        + ` @ ${leg.price} x ${leg.size.toFixed(1)} 股`,
+        + ` @ $${vwapPrice.toFixed(2)} (VWAP) x ${finalSize} 股`
+        + ` | 原始价=$${leg.price.toFixed(2)}`
+        + ` | edge=${(adjustedEdge * 100).toFixed(1)}%`
+        + ` | 预算=$${availableBudget.toFixed(2)}`,
       )
 
       const result = await this.pmClient.createLimitOrder({
         tokenId: leg.tokenId,
         side: ClobSide.BUY,
-        price: leg.price,
-        size: leg.size,
+        price: vwapPrice,
+        size: finalSize,
       })
 
       if (result.success) {
         opportunity.markExecuted()
+        this._stats.opportunitiesExecuted++
+
         const trade = this.createTrade({
           orderId: result.orderId ?? '',
           marketId: leg.marketId,
           tokenId: leg.tokenId,
           side: 'BUY',
-          price: leg.price,
-          size: leg.size,
+          price: vwapPrice,
+          size: finalSize,
           outcome: metadata.bucket.label,
         })
 
@@ -292,6 +419,42 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
   // ============ 辅助方法 ============
 
   /**
+   * 计算成交量加权平均价格 (VWAP)
+   * 遍历 ask 层级，累计 cost 和 filled 数量
+   * @param asks 按价格升序排列的卖单
+   * @param targetSize 目标买入数量
+   * @returns VWAP 价格，流动性不足时返回 null
+   */
+  private calculateVwap(asks: Array<{ price: string, size: string }>, targetSize: number): number | null {
+    if (asks.length === 0)
+      return null
+
+    let totalCost = 0
+    let totalFilled = 0
+
+    for (const ask of asks) {
+      const askPrice = Number.parseFloat(ask.price)
+      const askSize = Number.parseFloat(ask.size)
+      if (!Number.isFinite(askPrice) || !Number.isFinite(askSize))
+        continue
+
+      const fillQty = Math.min(askSize, targetSize - totalFilled)
+      totalCost += askPrice * fillQty
+      totalFilled += fillQty
+
+      if (totalFilled >= targetSize)
+        break
+    }
+
+    // 如果可填充量 < 目标的 80%，视为流动性不足
+    if (totalFilled < targetSize * 0.8) {
+      return null
+    }
+
+    return totalCost / totalFilled
+  }
+
+  /**
    * 查找活跃的天气市场事件
    * 使用 pagination 端点 + tag_slug=weather 过滤
    */
@@ -301,18 +464,16 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
       return []
     }
 
-    logger.info('[天气策略] 查找活跃的天气市场事件')
     const events = await this.pmClient.getEventsPaginated({
       tag_slug: 'weather',
       closed: false,
     })
 
-    logger.info(`[天气策略] 找到 ${events.length} 个活跃的天气市场事件`)
-
     const filteredEvents = events.filter(e =>
       e.slug.startsWith(this.config.eventSlugPrefix),
     )
-    logger.info(`[天气策略] 过滤后找到 ${filteredEvents.length} 个活跃的天气市场事件`)
+
+    logger.debug(`[天气策略] 天气事件: ${events.length} 个, NYC温度: ${filteredEvents.length} 个`)
     return filteredEvents
   }
 
@@ -329,12 +490,12 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
         if (!yesTokenId)
           continue
 
-        // 解析价格
+        // Gamma API 参考价
         const prices = market.outcomePrices ? JSON.parse(market.outcomePrices) as string[] : []
-        const yesPrice = prices[0] ? Number.parseFloat(prices[0]) : 0
+        const gammaPrice = prices[0] ? Number.parseFloat(prices[0]) : 0
 
-        // 获取 orderbook 价格（如果有 PM 客户端）
-        let bestAsk = yesPrice
+        // 获取 orderbook 实时价格
+        let bestAsk = gammaPrice
         let bestBid = 0
         if (this.pmClient) {
           try {
@@ -353,7 +514,7 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
           conditionId: market.conditionId,
           yesTokenId,
           question: market.question,
-          yesPrice,
+          gammaPrice,
           bestAsk,
           bestBid,
           bucket,
@@ -369,10 +530,6 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
 
   /**
    * 从市场问题中解析温度区间
-   * 问题格式示例：
-   * - "39°F or below"
-   * - "40°F to 41°F"
-   * - "54°F or above"
    */
   private parseBucketFromQuestion(question: string): TemperatureBucket {
     return WUAccuracyAnalyzer.parseBucketFromLabel(question)
