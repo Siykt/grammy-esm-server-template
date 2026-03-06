@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "debug": "tsx --inspect src/index.ts",
     "build": "tsup",
     "lint": "eslint src --fix",
     "postinstall": "prisma generate"
