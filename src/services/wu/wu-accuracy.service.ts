@@ -68,10 +68,9 @@ export class WUAccuracyAnalyzer {
       forecastMap.set(key, { highF: f.highF, lowF: f.lowF, leadDays: f.leadDays })
     }
 
-    // 构建偏差记录
+    // 构建偏差记录（保留每个 date + leadDays 组合，供 lead days 分层使用）
     const obsMap = new Map(observations.map(o => [o.date, o]))
     const deviations: ForecastDeviation[] = []
-    const seenDates = new Set<string>()
 
     for (const [key, forecast] of forecastMap) {
       const date = key.split('_')[0] ?? ''
@@ -82,11 +81,6 @@ export class WUAccuracyAnalyzer {
       // 跳过观测数据不完整的记录
       if (obs.highF == null)
         continue
-
-      // 每个日期只保留最短 leadDays 的偏差（最准确的预报）
-      if (seenDates.has(date))
-        continue
-      seenDates.add(date)
 
       deviations.push({
         date,
@@ -276,6 +270,121 @@ export class WUAccuracyAnalyzer {
 
   // ============ 概率分布计算 ============
 
+  /** Lead days 分档：近期 0-2 天、中期 3-5 天、远期 6+ 天 */
+  private static readonly LEAD_DAYS_MIN_SAMPLES = 5
+  private static readonly STD_FLOOR_RECENT = 2.0
+  private static readonly STD_FLOOR_MID = 3.5
+  private static readonly STD_FLOOR_LONG = 5.0
+  /** Wilson 区间置信水平 95% 对应 z */
+  private static readonly WILSON_Z = 1.96
+
+  /**
+   * Wilson 分数区间下界（小样本二项比例保守估计）
+   * 用于对频率法概率做置信度折扣，避免虚假 edge
+   */
+  private static wilsonLowerBound(p: number, n: number, z: number = WUAccuracyAnalyzer.WILSON_Z): number {
+    if (n <= 0)
+      return 0
+    if (p <= 0)
+      return 0
+    if (p >= 1)
+      return 1
+    const z2n = (z * z) / n
+    const denom = 1 + z2n
+    const radicand = (p * (1 - p)) / n + (z * z) / (4 * n * n)
+    const sqrt = Math.sqrt(radicand)
+    const lower = (p + z2n / 2 - z * sqrt) / denom
+    return Math.max(0, Math.min(1, lower))
+  }
+
+  /**
+   * 对频率法得到的各区间概率应用 Wilson 下界并重新归一化
+   */
+  private applyWilsonLowerBounds(buckets: TemperatureBucket[], n: number): TemperatureBucket[] {
+    if (n < 3) {
+      return buckets.map(b => ({ ...b }))
+    }
+    const lowered = buckets.map(b => ({
+      ...b,
+      probability: WUAccuracyAnalyzer.wilsonLowerBound(b.probability, n),
+    }))
+    const total = lowered.reduce((s, b) => s + b.probability, 0)
+    if (total <= 0)
+      return lowered
+    return lowered.map(b => ({ ...b, probability: b.probability / total }))
+  }
+
+  /**
+   * 根据 leadDays 获取所属档位（用于分层概率）
+   */
+  private getLeadDaysBand(leadDays: number): 'recent' | 'mid' | 'long' {
+    if (leadDays <= 2)
+      return 'recent'
+    if (leadDays <= 5)
+      return 'mid'
+    return 'long'
+  }
+
+  /**
+   * 筛选出与给定 leadDays 同档的偏差记录
+   */
+  private getDeviationsForLeadDaysBand(leadDays: number): ForecastDeviation[] {
+    const band = this.getLeadDaysBand(leadDays)
+    return this.deviations.filter(d => this.getLeadDaysBand(d.leadDays) === band)
+  }
+
+  /**
+   * 按 lead days 分层的温度区间概率
+   *
+   * 根据目标日期的预报提前天数（lead days）筛选同档历史偏差，
+   * 近期 (0-2天) / 中期 (3-5天) / 远期 (6+天) 使用不同 std 下限，
+   * 避免远期预报被高估。
+   *
+   * @param forecastHigh WU 预报高温 (°F)
+   * @param buckets Polymarket 温度区间
+   * @param leadDays 目标日期距今天数
+   * @returns 每个区间的概率
+   */
+  calculateBucketProbabilitiesForLeadDays(
+    forecastHigh: number,
+    buckets: TemperatureBucket[],
+    leadDays: number,
+  ): TemperatureBucket[] {
+    const bandDeviations = this.getDeviationsForLeadDaysBand(leadDays)
+    const band = this.getLeadDaysBand(leadDays)
+    const stdFloor = band === 'recent'
+      ? WUAccuracyAnalyzer.STD_FLOOR_RECENT
+      : band === 'mid'
+        ? WUAccuracyAnalyzer.STD_FLOOR_MID
+        : WUAccuracyAnalyzer.STD_FLOOR_LONG
+
+    let result: TemperatureBucket[]
+    if (bandDeviations.length >= WUAccuracyAnalyzer.LEAD_DAYS_MIN_SAMPLES) {
+      result = this.frequencyBasedProbabilityWithDeviations(forecastHigh, buckets, bandDeviations)
+      result = this.applyWilsonLowerBounds(result, bandDeviations.length)
+    }
+    else {
+      logger.warn(
+        `[WU准确率] lead days 档位 ${band} 样本量不足 (${bandDeviations.length})，使用正态近似 stdFloor=${stdFloor}°F`,
+      )
+      const accuracy = bandDeviations.length > 0
+        ? this.calculateAccuracy(bandDeviations.map(d => d.deviationHigh))
+        : this.getHighTempAccuracy()
+      result = this.normalApproximationWithStdFloor(forecastHigh, buckets, accuracy, stdFloor)
+    }
+
+    const totalProb = result.reduce((s, b) => s + b.probability, 0)
+    if (Math.abs(totalProb - 1.0) > 0.01) {
+      logger.warn(`[WU准确率] 概率总和偏离 1.0: ${totalProb.toFixed(4)}，执行归一化`)
+    }
+    if (totalProb > 0) {
+      for (const b of result) {
+        b.probability = b.probability / totalProb
+      }
+    }
+    return result
+  }
+
   /**
    * V1: 基于偏差频率的温度区间概率
    *
@@ -300,6 +409,7 @@ export class WUAccuracyAnalyzer {
     }
     else {
       result = this.frequencyBasedProbability(forecastHigh, buckets)
+      result = this.applyWilsonLowerBounds(result, this.deviations.length)
     }
 
     const totalProb = result.reduce((s, b) => s + b.probability, 0)
@@ -324,23 +434,32 @@ export class WUAccuracyAnalyzer {
     forecastHigh: number,
     buckets: TemperatureBucket[],
   ): TemperatureBucket[] {
-    const highDeviations = this.deviations.map(d => d.deviationHigh)
+    return this.frequencyBasedProbabilityWithDeviations(forecastHigh, buckets, this.deviations)
+  }
+
+  /**
+   * 使用指定偏差子集做频率法概率计算（供 lead days 分层使用）
+   */
+  private frequencyBasedProbabilityWithDeviations(
+    forecastHigh: number,
+    buckets: TemperatureBucket[],
+    deviationSubset: ForecastDeviation[],
+  ): TemperatureBucket[] {
+    const highDeviations = deviationSubset.map(d => d.deviationHigh)
     const n = highDeviations.length
+    if (n === 0) {
+      return buckets.map(b => ({ ...b, probability: 0 }))
+    }
 
     return buckets.map((bucket) => {
       let count = 0
       for (const deviation of highDeviations) {
-        // 实际温度 = 预报值 - 偏差（因为偏差 = 预报 - 实际）
         const actualTemp = forecastHigh - deviation
         if (this.isInBucket(actualTemp, bucket)) {
           count++
         }
       }
-
-      return {
-        ...bucket,
-        probability: count / n,
-      }
+      return { ...bucket, probability: count / n }
     })
   }
 
@@ -353,16 +472,26 @@ export class WUAccuracyAnalyzer {
     buckets: TemperatureBucket[],
     accuracy: ForecastAccuracy,
   ): TemperatureBucket[] {
+    return this.normalApproximationWithStdFloor(forecastHigh, buckets, accuracy, 3.0)
+  }
+
+  /**
+   * 正态近似法，支持按 lead days 档位设置 std 下限
+   */
+  private normalApproximationWithStdFloor(
+    forecastHigh: number,
+    buckets: TemperatureBucket[],
+    accuracy: ForecastAccuracy,
+    stdFloor: number,
+  ): TemperatureBucket[] {
     const minReliableSamples = 10
-    // 样本量过少时均值偏移不可靠，退化为 0（不做修正）
     const meanDev = accuracy.sampleSize >= minReliableSamples
       ? accuracy.meanDeviation
       : 0
     const mean = forecastHigh - meanDev
-    // 样本量过少时（<10），用默认标准差 3.0°F，避免因数据不足导致分布过于集中
     const std = accuracy.sampleSize >= minReliableSamples
-      ? Math.max(accuracy.stdDeviation, 1.5) // 即使有足够数据，也保证最小 1.5°F 的不确定性
-      : 3.0 // 默认 3°F 标准差（WU KLGA 历史经验值）
+      ? Math.max(accuracy.stdDeviation, stdFloor)
+      : stdFloor
 
     return buckets.map((bucket) => {
       const prob = this.normalCDF(bucket, mean, std)

@@ -18,6 +18,7 @@ import type { TemperatureBucket } from '../../services/wu/wu.types.js'
 import type { StrategyConfig, TradeResult } from '../base/strategy.interface.js'
 import { Side as ClobSide } from '@polymarket/clob-client'
 import logger from '../../common/logger.js'
+import { prisma } from '../../common/prisma.js'
 import { Opportunity, OpportunityStatus, OpportunityType } from '../../domain/entities/opportunity.entity.js'
 import { Side } from '../../domain/value-objects/side.vo.js'
 import { WUAccuracyAnalyzer } from '../../services/wu/wu-accuracy.service.js'
@@ -38,6 +39,14 @@ export interface WeatherStrategyConfig extends StrategyConfig {
   eventSlugPrefix: string
   /** WU 站点代码 */
   stationCode: string
+  /** 凯利比例（0.25 = 1/4 Kelly，降低模型不确定性下的风险） */
+  kellyFraction: number
+  /** 最小单笔下注金额（美元），避免过小订单 */
+  minBetSize: number
+  /** 最小偏差样本量，低于此值不扫描（避免虚假 edge） */
+  minSampleSize: number
+  /** 每日最大投入金额（美元），超过则熔断不再下单 */
+  maxDailyLoss: number
 }
 
 /** 市场价格信息（包含 YES 和 NO 两侧） */
@@ -94,6 +103,10 @@ const DEFAULT_CONFIG: WeatherStrategyConfig = {
   maxPrice: 0.95, // 跳过 95¢ 以上的市场
   eventSlugPrefix: 'highest-temperature-in-nyc-on-',
   stationCode: 'KLGA',
+  kellyFraction: 0.25, // 1/4 Kelly
+  minBetSize: 2,
+  minSampleSize: 15,
+  maxDailyLoss: 50,
 }
 
 export class WeatherArbitrageStrategy extends BaseStrategy {
@@ -117,7 +130,8 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
   // ============ 生命周期 ============
 
   protected override async onStart(): Promise<void> {
-    logger.info('[天气策略] 初始化 - 采集历史偏差数据')
+    logger.info('[天气策略] 初始化 - 回填历史观测并采集偏差数据')
+    await this.wuClient.backfillHistory(90)
     await this.analyzer.collectDeviations()
     await this.analyzer.printSummary()
   }
@@ -135,14 +149,33 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
         return []
       }
 
-      // 2. 查找活跃的天气市场
+      // 数据新鲜度检查：超过 2 小时未成功抓取则跳过本次扫描
+      if (this.wuClient.isForecastStale()) {
+        logger.warn(
+          '[天气策略] 预报数据已过期（超过 2 小时未成功抓取），跳过本次扫描。'
+          + ` 连续失败次数: ${this.wuClient.getConsecutiveFailures()}`,
+        )
+        return []
+      }
+
+      // 2. 最小样本量守门
+      const deviationCount = this.analyzer.getDeviations().length
+      if (deviationCount < this.config.minSampleSize) {
+        logger.warn(
+          `[天气策略] 偏差样本量不足: ${deviationCount} < ${this.config.minSampleSize}，跳过本次扫描`,
+        )
+        return []
+      }
+
+      // 3. 查找活跃的天气市场
       const weatherEvents = await this.findWeatherEvents()
       if (weatherEvents.length === 0) {
         logger.debug('[天气策略] 未找到活跃的天气市场')
         return []
       }
 
-      // 3. 逐个事件分析
+      // 4. 逐个事件分析
+      const todayStr = new Date().toISOString().slice(0, 10)
       for (const event of weatherEvents) {
         const targetDate = this.extractDateFromSlug(event.slug)
         if (!targetDate)
@@ -159,9 +192,10 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
         if (markets.length === 0)
           continue
 
-        // 计算概率分布
+        // 计算目标日期的 lead days（距今天数），用于分层概率
+        const leadDays = Math.max(0, Math.round((new Date(targetDate).getTime() - new Date(todayStr).getTime()) / (24 * 60 * 60 * 1000)))
         const buckets = markets.map(m => m.bucket)
-        const probabilities = this.analyzer.calculateBucketProbabilities(forecast.highF, buckets)
+        const probabilities = this.analyzer.calculateBucketProbabilitiesForLeadDays(forecast.highF, buckets, leadDays)
 
         // 扫描每个 bucket 的 YES 和 NO 两侧
         for (let i = 0; i < markets.length; i++) {
@@ -232,10 +266,12 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
     const tokenId = outcome === 'YES' ? market.yesTokenId : market.noTokenId
     const label = outcome === 'YES' ? market.bucket.label : `NO ${market.bucket.label}`
 
-    // 类凯利下注
-    const betSize = Math.min(
-      this.config.maxBetSize,
-      this.config.maxBetSize * edge * 5,
+    // 凯利下注：f* = edge / (1 - bestAsk)，再乘以 kellyFraction 降杠杆
+    const denominator = Math.max(0.01, 1 - bestAsk)
+    const kellyBet = this.config.maxBetSize * (edge / denominator) * this.config.kellyFraction
+    const betSize = Math.max(
+      this.config.minBetSize,
+      Math.min(this.config.maxBetSize, kellyBet),
     )
     const roundedPrice = Math.round(bestAsk * 100) / 100
     const size = Math.floor((betSize / roundedPrice) * 100) / 100
@@ -303,6 +339,26 @@ export class WeatherArbitrageStrategy extends BaseStrategy {
 
     const metadata = opportunity.metadata as unknown as WeatherOpportunityData
     const label = metadata.outcome === 'YES' ? metadata.bucket.label : `NO ${metadata.bucket.label}`
+
+    // 每日投入熔断：查询当天本策略已成交金额
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const todayTrades = await prisma.trade.findMany({
+      where: {
+        strategyName: this.name,
+        executedAt: { gte: startOfToday },
+      },
+      select: { price: true, size: true },
+    })
+    const dailySpent = todayTrades.reduce((sum, t) => sum + t.price * t.size, 0)
+    if (dailySpent >= this.config.maxDailyLoss) {
+      logger.warn(`[天气策略] 每日投入已达上限: $${dailySpent.toFixed(2)} >= $${this.config.maxDailyLoss}`)
+      return {
+        success: false,
+        trades: [],
+        error: `每日投入已达上限 $${dailySpent.toFixed(2)}`,
+      }
+    }
 
     try {
       opportunity.markExecuting()

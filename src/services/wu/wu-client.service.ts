@@ -58,11 +58,15 @@ const API_PATHS = {
   forecast3day: '/v3/wx/forecast/daily/3day',
   hourly15day: '/v3/wx/forecast/hourly/15day',
   historicalDaily30day: '/v3/wx/conditions/historical/dailysummary/30day',
+  historicalDaily1day: '/v3/wx/conditions/historical/dailysummary/1day',
   historicalHourly1day: '/v3/wx/conditions/historical/hourly/1day',
   currentObs: '/v3/wx/observations/current',
 }
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+/** 数据新鲜度阈值：超过此时长未成功抓取预报则视为过期（毫秒） */
+const FORECAST_STALE_MS = 2 * 60 * 60 * 1000
 
 export class WUClientService {
   private forecastCache: CacheEntry<WURootState> | null = null
@@ -72,6 +76,10 @@ export class WUClientService {
   private forecastCacheTTL: number
   /** 历史数据缓存时长（毫秒） */
   private historyCacheTTL: number
+  /** 连续抓取失败次数（用于健康检查） */
+  private consecutiveFailures = 0
+  /** 最近一次成功抓取预报页的时间 */
+  private lastSuccessFetchedAt: Date | null = null
 
   constructor(
     private station: WUStationConfig = WU_STATIONS.KLGA,
@@ -160,6 +168,77 @@ export class WUClientService {
    */
   async getRawState(): Promise<WURootState> {
     return this.fetchForecastPage()
+  }
+
+  /**
+   * 回填更早的历史观测数据（逐日抓取历史页面并写入 DB）
+   * 用于扩大偏差样本量，每次请求间隔 2 秒避免反爬
+   * @param days 回填过去多少天（不含今天）
+   */
+  async backfillHistory(days: number): Promise<{ fetched: number, saved: number }> {
+    let saved = 0
+    const now = new Date()
+    const oneDayMs = 24 * 60 * 60 * 1000
+
+    for (let i = 1; i <= days; i++) {
+      const d = new Date(now.getTime() - i * oneDayMs)
+      const dateStr = d.toISOString().slice(0, 10) // YYYY-MM-DD
+      const dateUrl = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` // YYYY-M-D 供 URL
+
+      try {
+        const state = await this.fetchHistoryPage(dateUrl)
+        const raw = this.findDataByApiPath(state, API_PATHS.historicalDaily1day) as WUHistoricalDailySummary | null
+          ?? this.findHistoricalDailyInState(state)
+
+        if (raw) {
+          const history = this.parseHistoricalDaily(raw)
+          await this.saveObservationsToDB(history)
+          saved += history.filter(h => h.highF != null).length
+        }
+      }
+      catch (err) {
+        logger.debug(`[WU] 回填 ${dateStr} 失败: ${err}`)
+      }
+
+      if (i < days) {
+        await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+
+    logger.info(`[WU] 回填完成: 过去 ${days} 天，写入 ${saved} 条观测`)
+    return { fetched: days, saved }
+  }
+
+  /**
+   * 在任意 SSR 状态中查找包含历史日摘要结构的响应体
+   */
+  private findHistoricalDailyInState(state: WURootState): WUHistoricalDailySummary | null {
+    for (const value of Object.values(state)) {
+      if (!value || typeof value !== 'object')
+        continue
+      const entry = value as WURootStateEntry
+      const b = entry?.b as unknown
+      if (b && typeof b === 'object' && Array.isArray((b as WUHistoricalDailySummary).validTimeLocal) && Array.isArray((b as WUHistoricalDailySummary).temperatureMax))
+        return b as WUHistoricalDailySummary
+    }
+    return null
+  }
+
+  /** 最近一次成功抓取预报数据的时间（用于策略侧新鲜度检查） */
+  getLastSuccessFetchedAt(): Date | null {
+    return this.lastSuccessFetchedAt
+  }
+
+  /** 连续抓取失败次数 */
+  getConsecutiveFailures(): number {
+    return this.consecutiveFailures
+  }
+
+  /** 预报数据是否已过期（超过 2 小时未成功抓取） */
+  isForecastStale(): boolean {
+    if (!this.lastSuccessFetchedAt)
+      return true
+    return Date.now() - this.lastSuccessFetchedAt.getTime() > FORECAST_STALE_MS
   }
 
   /** 清除内存缓存 */
@@ -297,19 +376,29 @@ export class WUClientService {
   private async fetchForecastPage(): Promise<WURootState> {
     // 检查缓存
     if (this.forecastCache && this.forecastCache.expiresAt > new Date()) {
+      this.lastSuccessFetchedAt = this.forecastCache.fetchedAt
       return this.forecastCache.data
     }
 
     const url = `https://www.wunderground.com/forecast/${this.station.urlPath}/${this.station.icaoCode}`
-    const state = await this.fetchAndParseSSR(url)
-
-    this.forecastCache = {
-      data: state,
-      fetchedAt: new Date(),
-      expiresAt: new Date(Date.now() + this.forecastCacheTTL),
+    try {
+      const state = await this.fetchAndParseSSR(url)
+      this.consecutiveFailures = 0
+      this.lastSuccessFetchedAt = new Date()
+      this.forecastCache = {
+        data: state,
+        fetchedAt: new Date(),
+        expiresAt: new Date(Date.now() + this.forecastCacheTTL),
+      }
+      return state
     }
-
-    return state
+    catch (err) {
+      this.consecutiveFailures++
+      if (this.consecutiveFailures >= 3) {
+        logger.error(`[WU] 连续抓取失败已达 ${this.consecutiveFailures} 次`, err)
+      }
+      throw err
+    }
   }
 
   /**
@@ -337,6 +426,7 @@ export class WUClientService {
 
   /**
    * 核心：抓取页面并提取 <script id="app-root-state"> 中的 JSON
+   * 失败时由调用方（如 fetchForecastPage）记录连续失败次数
    */
   private async fetchAndParseSSR(url: string): Promise<WURootState> {
     logger.debug(`[WU] 抓取页面: ${url}`)
