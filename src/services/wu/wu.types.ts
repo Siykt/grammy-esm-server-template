@@ -147,10 +147,10 @@ export interface ForecastDeviation {
   deviationHigh: number
   /** 预报低温 */
   forecastLow: number
-  /** 实际低温 */
-  actualLow: number
-  /** 偏差 = 预报 - 实际 */
-  deviationLow: number
+  /** 实际低温，观测缺失时为 null */
+  actualLow: number | null
+  /** 偏差 = 预报 - 实际，观测缺失时为 null */
+  deviationLow: number | null
   /** 预报提前天数（0=当天，1=1天前...） */
   leadDays: number
 }

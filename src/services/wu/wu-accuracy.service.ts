@@ -22,6 +22,8 @@ import { prisma } from '../../common/prisma.js'
 export class WUAccuracyAnalyzer {
   /** 内存中的偏差记录（从 DB 加载 + 新采集） */
   private deviations: ForecastDeviation[] = []
+  /** 手动添加的偏差记录，loadFromDB 后会合并回 deviations */
+  private manualDeviations: ForecastDeviation[] = []
 
   constructor(
     private wuClient: WUClientService,
@@ -55,7 +57,7 @@ export class WUAccuracyAnalyzer {
         station: this.station,
         date: { in: obsDates },
       },
-      orderBy: [{ date: 'asc' }, { leadDays: 'asc' }],
+      orderBy: [{ date: 'asc' }, { leadDays: 'asc' }, { fetchedAt: 'asc' }],
     })
 
     // 按 (date, leadDays) 分组，每组取最新一条
@@ -92,15 +94,27 @@ export class WUAccuracyAnalyzer {
         actualHigh: obs.highF,
         deviationHigh: forecast.highF - obs.highF,
         forecastLow: forecast.lowF,
-        actualLow: obs.lowF ?? 0,
-        deviationLow: forecast.lowF - (obs.lowF ?? 0),
+        actualLow: obs.lowF ?? null,
+        deviationLow: obs.lowF != null ? forecast.lowF - obs.lowF : null,
         leadDays: forecast.leadDays,
       })
     }
 
     this.deviations = deviations
+    this.mergeManualDeviations()
     logger.info(`[WU准确率] 从 DB 加载 ${deviations.length} 条偏差记录`)
-    return deviations
+    return this.deviations
+  }
+
+  /** 将 manualDeviations 合并到 deviations（按日期去重，保留已有） */
+  private mergeManualDeviations(): void {
+    const existingDates = new Set(this.deviations.map(d => d.date))
+    for (const d of this.manualDeviations) {
+      if (!existingDates.has(d.date)) {
+        this.deviations.push(d)
+        existingDates.add(d.date)
+      }
+    }
   }
 
   /**
@@ -119,13 +133,19 @@ export class WUAccuracyAnalyzer {
 
   /**
    * 手动添加偏差记录（补充数据）
+   * 同时写入 manualDeviations，loadFromDB 后会合并回 deviations
    */
   addDeviations(deviations: ForecastDeviation[]): void {
     const existingDates = new Set(this.deviations.map(d => d.date))
+    const manualDates = new Set(this.manualDeviations.map(d => d.date))
     for (const d of deviations) {
       if (!existingDates.has(d.date)) {
         this.deviations.push(d)
         existingDates.add(d.date)
+      }
+      if (!manualDates.has(d.date)) {
+        this.manualDeviations.push(d)
+        manualDates.add(d.date)
       }
     }
   }
@@ -194,9 +214,13 @@ export class WUAccuracyAnalyzer {
 
   /**
    * 计算低温预报准确率
+   * 过滤掉 actualLow/deviationLow 为 null 的记录（观测缺失）
    */
   getLowTempAccuracy(): ForecastAccuracy {
-    return this.calculateAccuracy(this.deviations.map(d => d.deviationLow))
+    const lowDeviations = this.deviations
+      .filter((d): d is ForecastDeviation & { deviationLow: number } => d.deviationLow !== null)
+      .map(d => d.deviationLow)
+    return this.calculateAccuracy(lowDeviations)
   }
 
   private calculateAccuracy(deviations: number[]): ForecastAccuracy {
@@ -214,7 +238,10 @@ export class WUAccuracyAnalyzer {
 
     const n = deviations.length
     const mean = deviations.reduce((s, d) => s + d, 0) / n
-    const variance = deviations.reduce((s, d) => s + (d - mean) ** 2, 0) / n
+    // 样本方差（Bessel 校正），n === 1 时方差为 0
+    const variance = n > 1
+      ? deviations.reduce((s, d) => s + (d - mean) ** 2, 0) / (n - 1)
+      : 0
     const std = Math.sqrt(variance)
 
     const sorted = [...deviations].sort((a, b) => a - b)
@@ -266,13 +293,25 @@ export class WUAccuracyAnalyzer {
   ): TemperatureBucket[] {
     const accuracy = this.getHighTempAccuracy()
 
+    let result: TemperatureBucket[]
     if (accuracy.sampleSize < 10) {
       logger.warn(`[WU准确率] 样本量不足 (${accuracy.sampleSize})，使用正态近似`)
-      return this.normalApproximation(forecastHigh, buckets, accuracy)
+      result = this.normalApproximation(forecastHigh, buckets, accuracy)
+    }
+    else {
+      result = this.frequencyBasedProbability(forecastHigh, buckets)
     }
 
-    // 用历史偏差频率直接计算
-    return this.frequencyBasedProbability(forecastHigh, buckets)
+    const totalProb = result.reduce((s, b) => s + b.probability, 0)
+    if (Math.abs(totalProb - 1.0) > 0.01) {
+      logger.warn(`[WU准确率] 概率总和偏离 1.0: ${totalProb.toFixed(4)}，执行归一化`)
+    }
+    if (totalProb > 0) {
+      for (const b of result) {
+        b.probability = b.probability / totalProb
+      }
+    }
+    return result
   }
 
   /**
@@ -314,10 +353,13 @@ export class WUAccuracyAnalyzer {
     buckets: TemperatureBucket[],
     accuracy: ForecastAccuracy,
   ): TemperatureBucket[] {
-    // 预报高温经偏差修正后的"真实"均值
-    const mean = forecastHigh - accuracy.meanDeviation
-    // 样本量过少时（<10），用默认标准差 3.0°F，避免因数据不足导致分布过于集中
     const minReliableSamples = 10
+    // 样本量过少时均值偏移不可靠，退化为 0（不做修正）
+    const meanDev = accuracy.sampleSize >= minReliableSamples
+      ? accuracy.meanDeviation
+      : 0
+    const mean = forecastHigh - meanDev
+    // 样本量过少时（<10），用默认标准差 3.0°F，避免因数据不足导致分布过于集中
     const std = accuracy.sampleSize >= minReliableSamples
       ? Math.max(accuracy.stdDeviation, 1.5) // 即使有足够数据，也保证最小 1.5°F 的不确定性
       : 3.0 // 默认 3°F 标准差（WU KLGA 历史经验值）
