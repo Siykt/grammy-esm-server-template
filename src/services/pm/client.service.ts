@@ -20,6 +20,7 @@ import axios from 'axios'
 import { Wallet } from 'ethers'
 import { Service } from '../../common/decorators/service.js'
 import logger from '../../common/logger.js'
+import { withRetry } from '../../common/retry.js'
 import { ENV } from '../../constants/env.js'
 
 const HOST = 'https://clob.polymarket.com'
@@ -44,7 +45,7 @@ export interface GammaMarket {
   id: string
   question: string
   conditionId: string
-  clobTokenIds: string[]
+  clobTokenIds: string
   outcomes: string
   outcomePrices?: string
   volume: string
@@ -83,13 +84,15 @@ export interface GammaSportsSeries {
 export interface GammaMarketFilters {
   active?: boolean
   closed?: boolean
+  archived?: boolean
   limit?: number
   offset?: number
-  order?: 'asc' | 'desc'
+  order?: string
   ascending?: boolean
   id?: string
   slug?: string
   tag?: string
+  tag_slug?: string
   tag_id?: string
   /** 体育联赛 ID */
   series_id?: string
@@ -130,15 +133,47 @@ class GammaClient {
    * 获取所有体育联赛列表
    */
   async getSports(): Promise<GammaSportsSeries[]> {
-    const response = await this.req.get('/sports')
-    return response.data as GammaSportsSeries[]
+    return withRetry(async () => {
+      const response = await this.req.get('/sports')
+      return response.data as GammaSportsSeries[]
+    }, { label: 'GammaClient.getSports' })
   }
 
   async getEvents(filters: GammaMarketFilters = {}): Promise<GammaEvent[]> {
-    const response = await this.req.get('/events', {
-      params: filters,
-    })
-    return response.data as GammaEvent[]
+    return withRetry(async () => {
+      const response = await this.req.get('/events', {
+        params: filters,
+      })
+      return response.data as GammaEvent[]
+    }, { label: 'GammaClient.getEvents' })
+  }
+
+  /**
+   * 通过 /events/pagination 端点获取事件（自动分页）
+   * 该端点支持 tag_slug 过滤，更适合天气等每日市场查询
+   */
+  async getEventsPaginated(filters: GammaMarketFilters = {}): Promise<GammaEvent[]> {
+    const allEvents: GammaEvent[] = []
+    let offset = filters.offset ?? 0
+    const limit = filters.limit ?? 50
+
+    while (true) {
+      const response = await withRetry(
+        () => this.req.get('/events/pagination', {
+          params: { ...filters, limit, offset },
+        }),
+        { label: 'GammaClient.getEventsPaginated' },
+      )
+      const body = response.data as { data: GammaEvent[], pagination: { hasMore: boolean, totalResults: number } }
+      allEvents.push(...body.data)
+
+      if (!body.pagination.hasMore || body.data.length === 0) {
+        break
+      }
+      offset += body.data.length
+    }
+
+    return allEvents
   }
 
   /**
@@ -177,15 +212,19 @@ class GammaClient {
   }
 
   async getMarkets(filters: GammaMarketFilters = {}): Promise<GammaMarket[]> {
-    const response = await this.req.get('/markets', {
-      params: filters,
-    })
-    return response.data as GammaMarket[]
+    return withRetry(async () => {
+      const response = await this.req.get('/markets', {
+        params: filters,
+      })
+      return response.data as GammaMarket[]
+    }, { label: 'GammaClient.getMarkets' })
   }
 
   async getMarket(conditionId: string): Promise<GammaMarket | null> {
-    const response = await this.req.get(`/markets/${conditionId}`)
-    return response.data as GammaMarket | null
+    return withRetry(async () => {
+      const response = await this.req.get(`/markets/${conditionId}`)
+      return response.data as GammaMarket | null
+    }, { label: 'GammaClient.getMarket' })
   }
 
   static instance = new GammaClient()
@@ -284,6 +323,18 @@ export class PMClientService {
     })
   }
 
+  /**
+   * 通过 pagination 端点获取事件（自动分页，支持 tag_slug 过滤）
+   */
+  async getEventsPaginated(filters: GammaMarketFilters = {}): Promise<GammaEvent[]> {
+    return GammaClient.instance.getEventsPaginated({
+      active: true,
+      closed: false,
+      archived: false,
+      ...filters,
+    })
+  }
+
   async getMarkets(filters: GammaMarketFilters = {}): Promise<GammaMarket[]> {
     return GammaClient.instance.getMarkets({
       active: true,
@@ -297,39 +348,57 @@ export class PMClientService {
   }
 
   async getMarketFromClob(conditionId: string): Promise<unknown> {
-    return await this.client.getMarket(conditionId)
+    return withRetry(
+      () => this.client.getMarket(conditionId),
+      { label: 'ClobClient.getMarket' },
+    )
   }
 
   async getOrderBook(tokenId: string): Promise<OrderBookSummary> {
-    return await this.client.getOrderBook(tokenId)
+    return withRetry(
+      () => this.client.getOrderBook(tokenId),
+      { label: 'ClobClient.getOrderBook' },
+    )
   }
 
   async getOrderBooks(tokenIds: string[]): Promise<OrderBookSummary[]> {
     const params = tokenIds.map(tokenId => ({ token_id: tokenId, side: 'BUY' as Side }))
-    return await this.client.getOrderBooks(params)
+    return withRetry(
+      () => this.client.getOrderBooks(params),
+      { label: 'ClobClient.getOrderBooks' },
+    )
   }
 
   async getTickSize(tokenId: string): Promise<TickSize> {
-    return await this.client.getTickSize(tokenId)
+    return withRetry(
+      () => this.client.getTickSize(tokenId),
+      { label: 'ClobClient.getTickSize' },
+    )
   }
 
   async getMidpoint(tokenId: string): Promise<number> {
-    const result = await this.client.getMidpoint(tokenId)
-    return Number.parseFloat(result.mid)
+    return withRetry(async () => {
+      const result = await this.client.getMidpoint(tokenId)
+      return Number.parseFloat(result.mid)
+    }, { label: 'ClobClient.getMidpoint' })
   }
 
   async getSpread(tokenId: string): Promise<{ bid: number, ask: number, spread: number }> {
-    const result = await this.client.getSpread(tokenId)
-    return {
-      bid: Number.parseFloat(result.bid),
-      ask: Number.parseFloat(result.ask),
-      spread: Number.parseFloat(result.spread),
-    }
+    return withRetry(async () => {
+      const result = await this.client.getSpread(tokenId)
+      return {
+        bid: Number.parseFloat(result.bid),
+        ask: Number.parseFloat(result.ask),
+        spread: Number.parseFloat(result.spread),
+      }
+    }, { label: 'ClobClient.getSpread' })
   }
 
   async getLastTradePrice(tokenId: string): Promise<number> {
-    const result = await this.client.getLastTradePrice(tokenId)
-    return Number.parseFloat(result.price)
+    return withRetry(async () => {
+      const result = await this.client.getLastTradePrice(tokenId)
+      return Number.parseFloat(result.price)
+    }, { label: 'ClobClient.getLastTradePrice' })
   }
 
   async getPriceHistory(params: {
@@ -338,7 +407,10 @@ export class PMClientService {
     endTs?: number
     fidelity?: number
   }): Promise<Array<{ t: number, p: number }>> {
-    return await this.client.getPricesHistory(params)
+    return withRetry(
+      () => this.client.getPricesHistory(params),
+      { label: 'ClobClient.getPricesHistory' },
+    )
   }
 
   // ============ Order Management (Authenticated) ============
@@ -479,12 +551,18 @@ export class PMClientService {
   // ============ Order Queries ============
   async getOrder(orderId: string): Promise<OpenOrder> {
     this.ensureInitialized()
-    return await this.client.getOrder(orderId)
+    return withRetry(
+      () => this.client.getOrder(orderId),
+      { label: 'ClobClient.getOrder' },
+    )
   }
 
   async getOpenOrders(params?: OpenOrderParams): Promise<OpenOrder[]> {
     this.ensureInitialized()
-    return await this.client.getOpenOrders(params)
+    return withRetry(
+      () => this.client.getOpenOrders(params),
+      { label: 'ClobClient.getOpenOrders' },
+    )
   }
 
   async getOpenOrdersByMarket(marketId: string): Promise<OpenOrder[]> {
@@ -498,7 +576,10 @@ export class PMClientService {
   // ============ Trade History ============
   async getTrades(params?: TradeParams): Promise<Trade[]> {
     this.ensureInitialized()
-    return await this.client.getTrades(params)
+    return withRetry(
+      () => this.client.getTrades(params),
+      { label: 'ClobClient.getTrades' },
+    )
   }
 
   async getTradesByMarket(marketId: string): Promise<Trade[]> {
@@ -514,7 +595,10 @@ export class PMClientService {
     this.ensureInitialized()
 
     try {
-      await this.client.cancelOrder({ orderID: orderId })
+      await withRetry(
+        () => this.client.cancelOrder({ orderID: orderId }),
+        { label: 'ClobClient.cancelOrder' },
+      )
       logger.info(`[PMClientService] Order cancelled: ${orderId}`)
       return true
     }
@@ -528,7 +612,10 @@ export class PMClientService {
     this.ensureInitialized()
 
     try {
-      await this.client.cancelOrders(orderIds)
+      await withRetry(
+        () => this.client.cancelOrders(orderIds),
+        { label: 'ClobClient.cancelOrders' },
+      )
       logger.info(`[PMClientService] Orders cancelled: ${orderIds.join(', ')}`)
       return { success: orderIds, failed: [] }
     }
@@ -542,7 +629,10 @@ export class PMClientService {
     this.ensureInitialized()
 
     try {
-      await this.client.cancelMarketOrders(params)
+      await withRetry(
+        () => this.client.cancelMarketOrders(params),
+        { label: 'ClobClient.cancelMarketOrders' },
+      )
       logger.info(`[PMClientService] Market orders cancelled: ${JSON.stringify(params)}`)
       return true
     }
@@ -556,7 +646,10 @@ export class PMClientService {
     this.ensureInitialized()
 
     try {
-      await this.client.cancelAll()
+      await withRetry(
+        () => this.client.cancelAll(),
+        { label: 'ClobClient.cancelAll' },
+      )
       logger.info('[PMClientService] All orders cancelled')
       return true
     }
@@ -569,7 +662,10 @@ export class PMClientService {
   // ============ Balance & Allowance ============
   async getBalanceAllowance(params?: BalanceAllowanceParams): Promise<BalanceAllowanceResponse> {
     this.ensureInitialized()
-    return await this.client.getBalanceAllowance(params)
+    return withRetry(
+      () => this.client.getBalanceAllowance(params),
+      { label: 'ClobClient.getBalanceAllowance' },
+    )
   }
 
   async getCollateralBalance(): Promise<{ balance: string, allowance: string }> {
@@ -585,7 +681,10 @@ export class PMClientService {
 
   async updateBalanceAllowance(params?: BalanceAllowanceParams): Promise<void> {
     this.ensureInitialized()
-    await this.client.updateBalanceAllowance(params)
+    await withRetry(
+      () => this.client.updateBalanceAllowance(params),
+      { label: 'ClobClient.updateBalanceAllowance' },
+    )
   }
 
   // ============ Utility ============
@@ -606,6 +705,9 @@ export class PMClientService {
   }
 
   async getServerTime(): Promise<number> {
-    return await this.client.getServerTime()
+    return withRetry(
+      () => this.client.getServerTime(),
+      { label: 'ClobClient.getServerTime' },
+    )
   }
 }
